@@ -33,7 +33,16 @@ function ImageNodeImpl({ data, selected }: NodeProps<ImageNodeType>) {
   const loading = running || loadingImage
   const loadFailed = hasImg && failedUrl === src
   const size = item.targetSize ?? item.image
-  const label = loadingImage ? '处理中' : display.label
+  const pctLabel = loadingImage ? '99%' : display.percent !== undefined ? `${display.percent}%` : '0%'
+  const stageLabel = loadingImage
+    ? '载入中'
+    : item.generationPhase === 'queued'
+      ? '排队中'
+      : item.generationPhase === 'processing'
+        ? '载入中'
+        : item.generationPhase === 'unconfirmed'
+          ? '确认中'
+          : '生成中'
   return (
     <div
       className={
@@ -57,16 +66,19 @@ function ImageNodeImpl({ data, selected }: NodeProps<ImageNodeType>) {
       {overlay?.kind === 'frame-in' && <i className="ov-crop" style={frameIn(item.image.width / item.image.height, overlay.ratio)} />}
       {loading && <>
         <GenerationArtwork variant={variant} />
-        <span className="gen-pill" role="status"><i aria-hidden />{label}</span>
+        <span className="gen-pill tnum" role="status" aria-label={`进度 ${pctLabel}`}><i aria-hidden />{pctLabel}</span>
+        <span className="gen-stage-pill" role="status">{stageLabel}</span>
         <div className="generation-caption">
           {running && display.percent !== undefined && <progress aria-label={display.estimated ? '图片生成估算进度' : '图片生成进度'} value={display.percent} max={100} />}
           <span>目标 {size.width} × {size.height}</span>
-          <small>{display.slow ? '耗时较长，仍在等待结果' : item.generationPhase === 'unconfirmed' ? '查询原任务中，请勿重复生成' : display.estimated ? '按耗时估算' : loadingImage ? '正在载入结果' : item.generationPhase === 'queued' ? '等待开始生成' : '完成后将在此显示'}</small>
         </div>
       </>}
       {(failed || loadFailed) && <div className="generation-failure nodrag nopan nowheel" role="status">
         <Icon name="alert" size={20} />
-        <strong>{loadFailed ? '图片暂未载入' : '生成未完成'}</strong>
+        <div className="gen-fail-head">
+          <strong>{loadFailed ? '图片暂未载入' : '生成未完成'}</strong>
+          {!loadFailed && <span className="gen-unbilled">未扣费</span>}
+        </div>
         <span className="nodrag nowheel">{loadFailed ? '结果已生成，可重新加载查看。' : item.errorMessage ?? '生成失败，请稍后重试。'}</span>
         {loadFailed ? <button className="nodrag nopan" onClick={(event) => { event.stopPropagation(); setFailedUrl(''); setLoadAttempt(value => value + 1) }}><Icon name="retry" size={12} />重新加载图片</button>
           : item.retryAllowed && item.toolRunId && onRetry ? <button className="nodrag nopan" disabled={retrying} onClick={async (event) => {
@@ -77,7 +89,7 @@ function ImageNodeImpl({ data, selected }: NodeProps<ImageNodeType>) {
             catch (error) { toast(error instanceof Error ? error.message : '重试提交未能确认，请查询原任务') }
             finally { setRetrying(false) }
           }}><Icon name="retry" size={12} />{retrying ? '提交中' : '重试'}</button>
-            : <small>请在对话中查看处理建议</small>}
+            : <small>请在对话中查看处理建议（未扣费）</small>}
       </div>}
       {selected && multi && <b className="ck"><Icon name="check" size={11} /></b>}
       {selected && !multi && (

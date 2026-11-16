@@ -7,8 +7,9 @@ import { GENERATION_KINDS } from '@/lib/v2/generation-history'
 import type { AgentMode, CaseExample, ChatAttachment, Generation, ToolCatalogItem } from '@/lib/v2/types'
 import { Composer, type ComposerSubmission } from './composer'
 import { Icon } from './icons'
+import { Lightbox, type LightboxItem } from './lightbox'
 import { Shell } from './shell'
-import { SlidingTabs, relTime } from './ui'
+import { SlidingTabs, relTime, useToast } from './ui'
 import { useV2Auth } from './auth'
 import { HeroParticles } from './hero-particles'
 import { useStartTool } from './tools-page'
@@ -29,6 +30,21 @@ const GEN_TABS: { id: GenTab; name: string }[] = [
   { id: 'detail', name: '详情页' },
   { id: 'fav', name: '收藏' },
 ]
+
+type CaseTab = 'all' | 'model' | 'main' | 'detail' | 'style'
+const CASE_TABS: { id: CaseTab; name: string }[] = [
+  { id: 'all', name: '全部' },
+  { id: 'model', name: '模特穿搭' },
+  { id: 'main', name: '商品主图' },
+  { id: 'detail', name: '详情海报' },
+  { id: 'style', name: '风格大片' },
+]
+const CASE_CAT_LABEL: Record<NonNullable<CaseExample['category']>, string> = {
+  model: '模特穿搭',
+  main: '商品主图',
+  detail: '详情海报',
+  style: '风格大片',
+}
 const STATUS_LABEL: Record<Generation['status'], string> = { done: '已完成', running: '生成中', failed: '失败' }
 
 /** 首页场景卡：精选在前，再补齐可用工具，固定 8 张 */
@@ -51,16 +67,19 @@ const stamp = (iso: string) => {
 export function HomePage() {
   const ds = useV2()
   const router = useRouter()
+  const toast = useToast()
   const { user, requireAuth } = useV2Auth()
   const [atts, setAtts] = useState<ChatAttachment[]>([])
   const [entry, setEntry] = useState<Entry>('chat')
   const [genTab, setGenTab] = useState<GenTab>('all')
+  const [caseTab, setCaseTab] = useState<CaseTab>('all')
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null)
   const { data: projects } = useLoad((d) => d.listProjects(), [user?.id], !!user)
   const { data: catalog, loading: loadingCatalog } = useLoad((d) => d.listToolCatalog())
-  const { data: cases } = useLoad((d) => d.listCases())
-  const { data: gens, loading: loadingGens } = useLoad(
+  const { data: cases, loading: loadingCases } = useLoad((d) => d.listCases())
+  const { data: gens, loading: loadingGens, reload: reloadGens } = useLoad(
     (d) => d.listGenerations({
-      limit: 8,
+      limit: 10,
       sort: 'newest',
       ...(genTab === 'fav' ? { favorite: true } : genTab === 'all' ? {} : { kind: genTab }),
     }),
@@ -72,6 +91,11 @@ export function HomePage() {
   const view = entry === 'canvas' ? 'split' : 'chat'
   const scenes = useMemo(() => pickScenes(catalog ?? []), [catalog])
   const projectName = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p.name])), [projects])
+  const filteredCases = useMemo(() => {
+    const list = cases ?? []
+    if (caseTab === 'all') return list
+    return list.filter((c) => c.category === caseTab)
+  }, [cases, caseTab])
 
   const startProject = async (text: string, mode: AgentMode, attachments = atts, submission?: ComposerSubmission) => {
     const productIds = attachments.filter((a) => a.kind === 'product').map((a) => a.id)
@@ -104,6 +128,7 @@ export function HomePage() {
 
         <div className="hm-composer">
           <Composer
+            hero
             attachments={atts}
             onAttachmentsChange={setAtts}
             onSend={(t, m, submission) => start(t, m, atts, submission)}
@@ -151,23 +176,106 @@ export function HomePage() {
       </div>
       <div className="hm-gens">
         {!user ? (
-          Array.from({ length: 4 }, (_, i) => <div key={i} className="hm-gen empty"><div className="hm-gen-ph" /></div>)
+          Array.from({ length: 5 }, (_, i) => <div key={i} className="hm-gen empty"><div className="hm-gen-ph" /></div>)
         ) : loadingGens && !gens ? (
-          Array.from({ length: 4 }, (_, i) => <div key={i} className="hm-gen"><div className="hm-gen-ph skel" /></div>)
+          Array.from({ length: 5 }, (_, i) => <div key={i} className="hm-gen"><div className="hm-gen-ph skel" /></div>)
         ) : (gens ?? []).length === 0 ? (
           <div className="hm-gens-empty">{genTab === 'fav' ? '还没有收藏的图' : '这一类还没有生成记录'}</div>
         ) : (
           (gens ?? []).map((g, i) => (
-            <Link key={g.id} href={`/v2/canvas/${g.projectId}?view=split`} className="hm-gen" style={{ '--i': i } as CSSProperties}>
+            <button
+              key={g.id}
+              type="button"
+              className="hm-gen"
+              style={{ '--i': i, textAlign: 'left' } as CSSProperties}
+              onClick={() => setLightboxIdx(i)}
+            >
               <div className="hm-gen-ph"><img src={g.image.thumbUrl ?? g.image.url} alt="" /></div>
               <div className="hm-gen-t">{projectName.get(g.projectId) ?? '未命名项目'} · {GENERATION_KINDS[g.kind]}</div>
               <div className="hm-gen-m" title={relTime(g.createdAt)}>
                 <Icon name="hist" size={11} />{stamp(g.createdAt)} · <span className={'st-' + g.status}>{STATUS_LABEL[g.status]}</span>
               </div>
-            </Link>
+            </button>
           ))
         )}
       </div>
+
+      <div className="hm-sec hm-sec-cases">
+        <h2>精选案例</h2>
+        <SlidingTabs tabs={CASE_TABS} active={caseTab} onChange={setCaseTab} small />
+      </div>
+      <div className="hm-cases">
+        {loadingCases && !cases ? (
+          Array.from({ length: 10 }, (_, i) => (
+            <div key={i} className={`hm-case-card skel-card ${i % 3 === 0 ? 'ar-tall' : i % 3 === 1 ? 'ar-square' : 'ar-wide'}`}>
+              <div className="hm-case-ph skel" />
+            </div>
+          ))
+        ) : filteredCases.length === 0 ? (
+          <div className="hm-gens-empty">这一类还没有案例</div>
+        ) : (
+          filteredCases.map((c, i) => (
+            <button
+              key={c.id}
+              type="button"
+              className={`hm-case-card ar-${c.aspect ?? (i % 3 === 0 ? 'tall' : i % 3 === 1 ? 'square' : 'wide')}`}
+              style={{ '--i': i } as CSSProperties}
+              onClick={() => startCase(c)}
+            >
+              <div className="hm-case-ph">
+                <img src={c.image.thumbUrl ?? c.image.url} alt={c.title} loading="lazy" />
+                <span className="hm-case-cta">做同款</span>
+                <span className="hm-case-badge" aria-hidden><Icon name="spark" size={11} /></span>
+              </div>
+              <div className="hm-case-info">
+                <span className="hm-case-t">{c.title}</span>
+                {c.category && <span className="hm-case-cat">{CASE_CAT_LABEL[c.category]}</span>}
+              </div>
+            </button>
+          ))
+        )}
+      </div>
+      {lightboxIdx !== null && (gens ?? []).length > 0 && (
+        <Lightbox
+          items={(gens ?? []).map((g): LightboxItem => ({
+            id: g.id,
+            generationId: g.id,
+            projectId: g.projectId,
+            image: g.image,
+            title: `${projectName.get(g.projectId) ?? '未命名项目'} · ${GENERATION_KINDS[g.kind]}`,
+            prompt: g.prompt,
+            modelName: g.modelName,
+            ratio: g.ratio,
+            resolution: g.resolution,
+            createdAt: g.createdAt,
+            favorite: g.favorite,
+          }))}
+          index={lightboxIdx}
+          onIndexChange={setLightboxIdx}
+          onClose={() => setLightboxIdx(null)}
+          onToggleFavorite={async (it) => {
+            try {
+              await ds.setGenerationFavorite([it.id], !it.favorite)
+              reloadGens()
+              toast(it.favorite ? '已取消收藏' : '已收藏')
+            } catch { toast('收藏操作失败') }
+          }}
+          onUseAsReference={(it) => {
+            setAtts((prev) => [
+              ...prev.filter((a) => a.image.id !== it.image.id),
+              { kind: 'material', id: it.id, label: it.title ?? '参考图', image: it.image },
+            ])
+            setLightboxIdx(null)
+            toast('已添加到首页输入框参考图')
+          }}
+          onRegenerate={(it) => {
+            setLightboxIdx(null)
+            if (it.projectId) {
+              router.push(`/v2/canvas/${encodeURIComponent(it.projectId)}?view=split&reuse=${encodeURIComponent(it.id)}`)
+            }
+          }}
+        />
+      )}
     </Shell>
   )
 }

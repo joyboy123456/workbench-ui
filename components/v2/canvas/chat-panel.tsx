@@ -1,10 +1,11 @@
 'use client'
 import Link from 'next/link'
 import React, { useEffect, useRef, useState, type CSSProperties } from 'react'
-import type { AgentMode, ChatAttachment, ChatMessage, ImageRef, Project } from '@/lib/v2/types'
+import type { AgentMode, AskMessage, ChatAttachment, ChatMessage, ImageRef, Project } from '@/lib/v2/types'
 import { Composer, type ComposerSubmission } from '../composer'
 import { Icon } from '../icons'
 import { useDismiss, useToast } from '../ui'
+import { AskCard } from './ask-card'
 import { GenerationStep } from './generation-state'
 
 export type SessionView = 'chat' | 'split'
@@ -15,6 +16,8 @@ export interface ChatPanelProps {
   attachments: ChatAttachment[]
   onAttachmentsChange: (a: ChatAttachment[]) => void
   onSend: (text: string, mode: AgentMode, submission?: ComposerSubmission) => void | Promise<void>
+  onAnswerAsk?: (ask: AskMessage, selectedKey: string, answerText: string) => void | Promise<void>
+  onSkipAsk?: (ask: AskMessage) => void
   canvasImages: { id: string; label: string; image: ImageRef }[]
   busy: boolean
   onStop?: () => void
@@ -36,19 +39,90 @@ export interface ChatPanelProps {
 
 const STEP_ICON = { think: 'info', image: 'img', doc: 'doc', tool: 'wand' } as const
 
-/** 正文：段落 + 无序列表 */
-function Body({ text }: { text: string }) {
-  const blocks = text.split(/\n{2,}/)
+function useReducedMotion() {
+  const [reduced, setReduced] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    setReduced(mq.matches)
+    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  return reduced
+}
+
+/** 正文：段落 + 无序列表 + 打字机式流式逐字显示 */
+function Body({ text, streaming }: { text: string; streaming?: boolean }) {
+  const reducedMotion = useReducedMotion()
+  const [visibleLen, setVisibleLen] = useState(() => (streaming && !reducedMotion ? 0 : text.length))
+
+  useEffect(() => {
+    if (!streaming || reducedMotion) {
+      setVisibleLen(text.length)
+      return
+    }
+    if (visibleLen >= text.length) return
+    const timer = window.setTimeout(() => {
+      setVisibleLen((prev) => Math.min(text.length, prev + 2))
+    }, 24)
+    return () => window.clearTimeout(timer)
+  }, [text, streaming, reducedMotion, visibleLen])
+
+  const shown = streaming && !reducedMotion ? text.slice(0, visibleLen) : text
+  const showCursor = Boolean(streaming && !reducedMotion)
+
+  if (!shown && showCursor) {
+    return (
+      <p style={{ color: 'var(--tx)' }}>
+        <span className="stream-cursor" aria-hidden />
+      </p>
+    )
+  }
+
+  const blocks = shown.split(/\n{2,}/)
   return (
-    <>
+    <div className="ab-body-wrap">
       {blocks.map((b, i) => {
+        const isLast = i === blocks.length - 1
+        const cursor = isLast && showCursor ? <span className="stream-cursor" aria-hidden /> : null
         const lines = b.split('\n')
-        if (lines.every((l) => l.startsWith('- '))) return <ul key={i}>{lines.map((l, j) => <li key={j}>{l.slice(2)}</li>)}</ul>
+        if (lines.every((l) => l.startsWith('- '))) {
+          return (
+            <ul key={i}>
+              {lines.map((l, j) => (
+                <li key={j}>
+                  {l.slice(2)}
+                  {j === lines.length - 1 ? cursor : null}
+                </li>
+              ))}
+            </ul>
+          )
+        }
         const [first, ...rest] = lines
-        if (rest.length && rest.every((l) => l.startsWith('- '))) return <div key={i}><p>{first}</p><ul>{rest.map((l, j) => <li key={j}>{l.slice(2)}</li>)}</ul></div>
-        return <p key={i} style={i === 0 ? { color: 'var(--tx)' } : undefined}>{b}</p>
+        if (rest.length && rest.every((l) => l.startsWith('- '))) {
+          return (
+            <div key={i}>
+              <p>{first}</p>
+              <ul>
+                {rest.map((l, j) => (
+                  <li key={j}>
+                    {l.slice(2)}
+                    {j === rest.length - 1 ? cursor : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
+        }
+        return (
+          <p key={i} style={i === 0 ? { color: 'var(--tx)' } : undefined}>
+            {b}
+            {cursor}
+          </p>
+        )
       })}
-    </>
+    </div>
   )
 }
 
@@ -56,10 +130,39 @@ export function ChatPanel(p: ChatPanelProps) {
   const toast = useToast()
   const [menuOpen, setMenuOpen] = useState(false)
   const [votes, setVotes] = useState<Record<string, 'up' | 'down'>>({})
+  const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>({})
+  const [showScrollLatest, setShowScrollLatest] = useState(false)
+  const [draft, setDraft] = useState<{ text: string; seq: number } | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const stickBottomRef = useRef(true)
   useDismiss(menuOpen, () => setMenuOpen(false), menuRef)
-  useEffect(() => { listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' }) }, [p.messages])
+
+  const scrollToBottom = (smooth = true) => {
+    const el = listRef.current
+    if (!el) return
+    stickBottomRef.current = true
+    setShowScrollLatest(false)
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+  }
+
+  useEffect(() => {
+    if (!stickBottomRef.current) return
+    const el = listRef.current
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  }, [p.messages])
+
+  const handleScroll = () => {
+    const el = listRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 48
+    stickBottomRef.current = atBottom
+    setShowScrollLatest(!atBottom)
+  }
+
+  const activeAsk = [...p.messages].reverse().find(
+    (m): m is AskMessage => m.role === 'ask' && !m.answered && !m.skipped
+  )
 
   const isChatView = p.view === 'chat'
   const isCollapsed = p.view === 'split' && p.collapsed
@@ -151,7 +254,7 @@ export function ChatPanel(p: ChatPanelProps) {
         )}
       </div>
 
-      <div className="ms" ref={listRef}>
+      <div className="ms" ref={listRef} onScroll={handleScroll}>
         <div className="ms-col">
           {p.messages.length === 0 && (
             <div className="chat-empty">
@@ -166,72 +269,154 @@ export function ChatPanel(p: ChatPanelProps) {
               </div>
             </div>
           )}
-          {p.messages.map((m) => m.role === 'user' ? (
-            <div key={m.id} className="ub">
-              {m.attachments.length > 0 && (
-                <div className="at">
-                  {m.attachments.filter(a => a.kind !== 'canvas' || !m.text.includes('@' + a.label)).map((a) => (
-                    <button type="button" className="message-ref" key={`${a.kind}:${a.id}`} aria-label={`引用 ${a.label}`} title={a.label}
-                      onClick={() => p.onFocusResult(a.kind === 'canvas' ? a.id : a.image.id)}>
-                      <img src={a.image.thumbUrl ?? a.image.url} alt="" />
-                      <span>{a.label}</span>
-                    </button>
-                  ))}
+          {p.messages.map((m) => {
+            if (m.role === 'user') {
+              return (
+                <div key={m.id} className="ub">
+                  {m.attachments.length > 0 && (
+                    <div className="at">
+                      {m.attachments.filter(a => a.kind !== 'canvas' || !m.text.includes('@' + a.label)).map((a) => (
+                        <button type="button" className="message-ref" key={`${a.kind}:${a.id}`} aria-label={`引用 ${a.label}`} title={a.label}
+                          onClick={() => p.onFocusResult(a.kind === 'canvas' ? a.id : a.image.id)}>
+                          <img src={a.image.thumbUrl ?? a.image.url} alt="" />
+                          <span>{a.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {renderRefs(m.text, m.attachments, p.onFocusResult)}
                 </div>
-              )}
-              {renderRefs(m.text, m.attachments, p.onFocusResult)}
-            </div>
-          ) : (
-            <div key={m.id} className="ab">
-              {m.steps.map((s, i) => {
-                if (s.itemId) return <GenerationStep key={s.itemId} itemId={s.itemId} label={s.label} />
-                const active = s.label.includes('中') || Boolean(s.progress && s.progress.done < s.progress.total)
-                return (
-                  <div key={i} className={'sl' + (active ? ' active' : '')}>
-                    <Icon name={STEP_ICON[s.icon]} size={12} />
-                    <span className="sl-txt">{s.label}{s.progress && ` · 生成中 ${s.progress.done} / ${s.progress.total}`}</span>
-                    {active && <i className="pulse-dot" aria-hidden />}
-                  </div>
-                )
-              })}
-              {m.results.length > 0 && (
-                <div className="rs">
-                  {m.results.map((r, idx) => r.image?.url && r.status === 'done'
-                    ? (
+              )
+            }
+            if (m.role === 'ask') {
+              return (
+                <div key={m.id} className="ab ask-msg">
+                  {m.reason && <p>{m.reason}</p>}
+                  {m.skipped && <div className="sl done"><Icon name="check" size={12} /><span className="sl-txt">已跳过该问题</span></div>}
+                </div>
+              )
+            }
+            return (
+              <div key={m.id} className="ab">
+                {m.steps.map((s, i) => {
+                  if (s.itemId) return <GenerationStep key={s.itemId} itemId={s.itemId} label={s.label} />
+                  const active = s.status === 'running' || (s.status !== 'done' && s.status !== 'failed' && (s.label.includes('中') || Boolean(s.progress && s.progress.done < s.progress.total)))
+                  const done = !active && s.status !== 'failed'
+                  const canExpand = Boolean(s.collapsible || s.detail)
+                  const stepKey = `${m.id}:${i}`
+                  const expanded = Boolean(expandedSteps[stepKey])
+                  return (
+                    <div key={i} className="sl-wrap">
                       <div
-                        key={r.id}
-                        className={'rs-card' + (p.selectedGenIds?.includes(r.id) ? ' sel' : '')}
-                        style={{ '--i': idx } as CSSProperties}
-                        onClick={() => p.onFocusResult(r.id)}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); p.onFocusResult(r.id) } }}
-                        title={isChatView ? '点击展开画布并定位此图' : '在画布中定位'}
+                        className={'sl' + (active ? ' active' : '') + (done ? ' done' : '') + (canExpand ? ' collapsible' : '')}
+                        role={canExpand ? 'button' : undefined}
+                        tabIndex={canExpand ? 0 : undefined}
+                        aria-expanded={canExpand ? expanded : undefined}
+                        onClick={canExpand ? () => setExpandedSteps(prev => ({ ...prev, [stepKey]: !prev[stepKey] })) : undefined}
+                        onKeyDown={canExpand ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            setExpandedSteps(prev => ({ ...prev, [stepKey]: !prev[stepKey] }))
+                          }
+                        } : undefined}
                       >
-                        <img src={r.image.thumbUrl ?? r.image.url} alt="" draggable={false} />
-                        <span className="rs-ov">
-                          <Icon name="canvas" size={11} />
-                          {isChatView ? '展开画布' : '定位画布'}
-                        </span>
+                        <Icon name={done ? 'check' : STEP_ICON[s.icon]} size={12} />
+                        <span className="sl-txt">{s.label}{s.progress && ` · 生成中 ${s.progress.done} / ${s.progress.total}`}</span>
+                        {canExpand && <Icon name="chev" size={11} className={'sl-caret' + (expanded ? ' open' : '')} />}
+                        {active && <i className="pulse-dot" aria-hidden />}
                       </div>
-                    )
-                    : r.status === 'failed' ? <span key={r.id}>未完成</span> : <b key={r.id} style={{ '--i': idx } as CSSProperties} className="rs-skel shimmer" />)}
-                </div>
-              )}
-              {m.body && <Body text={m.body} />}
-              {m.body && (
-                <div className="fb">
-                  <button className={votes[m.id] === 'up' ? 'on' : ''} title="有用" onClick={() => setVotes((v) => ({ ...v, [m.id]: 'up' }))}><Icon name="up2" size={13} /></button>
-                  <button className={votes[m.id] === 'down' ? 'on' : ''} title="没用" onClick={() => setVotes((v) => ({ ...v, [m.id]: 'down' }))}><Icon name="dn2" size={13} /></button>
-                  <button title="复制" onClick={() => { navigator.clipboard?.writeText(m.body ?? ''); toast('已复制') }}><Icon name="copy" size={13} /></button>
-                </div>
-              )}
-            </div>
-          ))}
+                      {canExpand && expanded && s.detail && (
+                        <div className="sl-detail">{s.detail}</div>
+                      )}
+                    </div>
+                  )
+                })}
+                {m.results.length > 0 && (
+                  <div className="rs">
+                    {m.results.map((r, idx) => r.image?.url && r.status === 'done'
+                      ? (
+                        <div
+                          key={r.id}
+                          className={'rs-card' + (p.selectedGenIds?.includes(r.id) ? ' sel' : '')}
+                          style={{ '--i': idx } as CSSProperties}
+                          onClick={() => p.onFocusResult(r.id)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); p.onFocusResult(r.id) } }}
+                          title={isChatView ? '点击展开画布并定位此图' : '在画布中定位'}
+                        >
+                          <img src={r.image.thumbUrl ?? r.image.url} alt="" draggable={false} />
+                          <span className="rs-ov">
+                            <Icon name="canvas" size={11} />
+                            {isChatView ? '展开画布' : '定位画布'}
+                          </span>
+                        </div>
+                      )
+                      : r.status === 'failed' ? <span key={r.id} className="rs-failed">未完成</span> : <b key={r.id} style={{ '--i': idx } as CSSProperties} className="rs-skel shimmer" />)}
+                  </div>
+                )}
+                {m.meta?.spec && <div className="ab-spec tnum">{m.meta.spec}</div>}
+                {m.body && <Body text={m.body} streaming={m.streaming} />}
+                {m.meta?.highlights && m.meta.highlights.length > 0 && (
+                  <div className="ab-highlights">
+                    <div className="ab-sec-t">这一版落实的几点</div>
+                    <ul>
+                      {m.meta.highlights.map((item, idx) => <li key={idx}>{item}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {m.meta?.suggestions && m.meta.suggestions.length > 0 && (
+                  <div className="ab-suggestions">
+                    <div className="ab-sec-t">常见调整方向</div>
+                    <div className="ab-chips">
+                      {m.meta.suggestions.map((s, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          className="ab-chip"
+                          onClick={() => setDraft({ text: s, seq: Date.now() })}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {m.body && !m.streaming && (
+                  <div className="fb">
+                    <button className={votes[m.id] === 'up' ? 'on' : ''} title="有用" aria-label="有用" onClick={() => setVotes((v) => ({ ...v, [m.id]: 'up' }))}><Icon name="up2" size={13} /></button>
+                    <button className={votes[m.id] === 'down' ? 'on' : ''} title="没用" aria-label="没用" onClick={() => setVotes((v) => ({ ...v, [m.id]: 'down' }))}><Icon name="dn2" size={13} /></button>
+                    <button title="复制" aria-label="复制" onClick={() => { navigator.clipboard?.writeText(m.body ?? ''); toast('已复制') }}><Icon name="copy" size={13} /></button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       </div>
 
+      {showScrollLatest && (
+        <button type="button" className="scroll-latest-btn" onClick={() => scrollToBottom(true)}>
+          <Icon name="chev" size={13} />
+          <span>回到最新</span>
+        </button>
+      )}
+
       <div className="cp-col">
+        {activeAsk && (
+          <AskCard
+            ask={activeAsk}
+            disabled={p.busy}
+            onSubmit={(ask, selectedKey, answerText) => {
+              if (p.onAnswerAsk) {
+                void p.onAnswerAsk(ask, selectedKey, answerText)
+              } else {
+                void p.onSend(`Q：${ask.question} A：${answerText}`, 'agent')
+              }
+            }}
+            onSkip={(ask) => p.onSkipAsk?.(ask)}
+          />
+        )}
         <Composer
           attachments={p.attachments}
           onAttachmentsChange={p.onAttachmentsChange}
@@ -240,6 +425,7 @@ export function ChatPanel(p: ChatPanelProps) {
           busy={p.busy}
           onStop={p.onStop}
           stopping={p.stopping}
+          draft={draft}
         />
       </div>
     </aside>

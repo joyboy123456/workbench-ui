@@ -28,8 +28,31 @@ export const chatMessageSchema: z.ZodType<ChatMessage> = z.discriminatedUnion('r
     kind: z.enum(['product', 'model', 'canvas', 'material', 'upload', 'brand']), id, label: z.string().max(1000), image,
   }).strict()).max(100) }).strict(),
   z.object({ id, role: z.literal('assistant'), createdAt: z.string().datetime(), body: z.string().max(200000).optional(),
-    steps: z.array(z.object({ itemId: id.optional(), label: z.string().max(2000), icon: z.enum(['think', 'image', 'doc', 'tool']), progress: z.object({ done: z.number().finite().nonnegative(), total: z.number().finite().nonnegative() }).strict().optional() }).strict()).max(1000),
+    streaming: z.boolean().optional(),
+    meta: z.object({
+      spec: z.string().max(500).optional(),
+      highlights: z.array(z.string().max(500)).max(50).optional(),
+      suggestions: z.array(z.string().max(500)).max(20).optional(),
+    }).strict().optional(),
+    steps: z.array(z.object({
+      itemId: id.optional(),
+      label: z.string().max(2000),
+      icon: z.enum(['think', 'image', 'doc', 'tool']),
+      status: z.enum(['running', 'done', 'failed']).optional(),
+      detail: z.string().max(10000).optional(),
+      collapsible: z.boolean().optional(),
+      progress: z.object({ done: z.number().finite().nonnegative(), total: z.number().finite().nonnegative() }).strict().optional(),
+    }).strict()).max(1000),
     results: z.array(z.object({ id, image: image.optional(), status }).strict()).max(1000),
+  }).strict(),
+  z.object({
+    id, role: z.literal('ask'), createdAt: z.string().datetime(),
+    reason: z.string().max(2000).optional(),
+    question: z.string().max(2000),
+    options: z.array(z.object({ key: z.string().max(16), label: z.string().max(500), description: z.string().max(1000).optional() }).strict()).max(10),
+    otherPlaceholder: z.string().max(500).optional(),
+    answered: z.object({ selectedKey: z.string().max(16), answerText: z.string().max(2000) }).strict().optional(),
+    skipped: z.boolean().optional(),
   }).strict(),
 ])
 const uniqueIds = <T extends { id: string }>(values: T[]) => new Set(values.map(value => value.id)).size === values.length

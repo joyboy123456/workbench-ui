@@ -14,3 +14,12 @@ test('stale preferences resolve to a current model and supported resolution/coun
   const result = normalizeGeneration({ modelId: 'removed', ratio: 'bad', resolution: '4k', count: 50 }, composerOptions(['nano-banana-2-lite']))
   assert.deepEqual(result, { modelId: 'nano-banana-2-lite', ratio: '3:4', resolution: '1k', count: 4 })
 })
+test('model presets expose speed/strength tags and fall back unsupported ratio when switching models', () => {
+  const options = composerOptions()
+  const lite = options.models.find(m => m.id === 'nano-banana-2-lite')!
+  assert.equal(lite.speedTag, '快')
+  assert.ok(lite.strengthTags.includes('局部编辑'))
+  const fallback = normalizeGeneration({ modelId: 'nano-banana-2-lite', ratio: '9:16', resolution: '4k', count: 2 }, options)
+  assert.equal(fallback.ratio, '3:4')
+  assert.equal(fallback.resolution, '1k')
+})

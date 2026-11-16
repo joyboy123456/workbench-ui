@@ -1,10 +1,12 @@
 'use client'
 import Link from 'next/link'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useEffect, useRef, useState } from 'react'
 import { useLoad, useV2 } from '@/lib/v2/data-source'
 import type { Generation } from '@/lib/v2/types'
 import { GENERATION_KINDS, groupGenerationDays } from '@/lib/v2/generation-history'
 import { Icon } from './icons'
+import { Lightbox, type LightboxItem } from './lightbox'
 import { CardSkeleton, EmptyState, useToast } from './ui'
 
 const PAGE_SIZE = 36
@@ -107,50 +109,57 @@ function HistoryDialog({ label, onClose, className, children }: { label: string;
 
 function GenerationPreview({ id, navigation, onNavigate, projectName, toolName, onClose, onFavorite }: { id: string; navigation: Generation[]; onNavigate: (id: string) => void; projectName: (g: Generation) => string; toolName: (g: Generation) => string; onClose: () => void; onFavorite: () => void }) {
   const ds = useV2()
+  const router = useRouter()
+  const toast = useToast()
   const detail = useLoad(d => d.getGeneration(id), [id])
-  const [message, setMessage] = useState('')
-  const [busy, setBusy] = useState(false)
-  const g = detail.data?.generation
-  const loading = detail.loading || (!detail.error && Boolean(g && g.id !== id))
   const siblings = detail.data?.siblings ?? []
   const sequence = siblings.length > 1 ? siblings : navigation
-  const index = sequence.findIndex(g => g.id === id)
-  const move = useCallback((delta: number) => {
-    const next = sequence[index + delta]
-    if (!busy && !loading && next) { setMessage(''); onNavigate(next.id) }
-  }, [sequence, index, busy, loading, onNavigate])
-  useEffect(() => {
-    // A navigation button can unmount while the next image loads. Keep arrows working during the dialog's lifetime.
-    const onKey = (event: KeyboardEvent) => {
-      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-      if (event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[contenteditable]')) return
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-        event.preventDefault()
-        move(event.key === 'ArrowLeft' ? -1 : 1)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [move])
-  const operation = async (fn: () => Promise<void>, success: string) => {
-    setBusy(true)
-    try { await fn(); setMessage(success) } catch (error) { setMessage(error instanceof Error ? error.message : '操作失败，请重试') } finally { setBusy(false) }
-  }
-  return <HistoryDialog label="生成详情" onClose={onClose} className="history-preview">
-    <div className="history-preview-inner">
-      <div className="history-preview-top"><span>生成详情</span><span className="sp" /><small>← / → 切换 · Esc 关闭</small><button className="btn" aria-label="关闭生成详情" onClick={onClose}><Icon name="x" size={18} /></button></div>
-      {loading ? <div className="history-preview-loading" role="status">正在读取作品详情…</div> : detail.error || !g ? <div className="history-preview-loading" role="alert">{detail.error ?? '记录已不可用'}<button className="btn" onClick={detail.reload}>重试</button></div> : <>
-        <div className="history-stage"><div className="history-main-image"><button className="history-prev" aria-label="上一张" disabled={index <= 0 || busy} onClick={() => move(-1)}><Icon name="left" size={22} /></button><img src={g.image.url} alt={g.prompt || `${toolName(g)}生成作品`} /><button className="history-next" aria-label="下一张" disabled={index < 0 || index === sequence.length - 1 || busy} onClick={() => move(1)}><Icon name="right" size={22} /></button></div>
-          <div className="history-filmstrip" aria-label="同组作品">{siblings.map((sibling, position) => <button key={sibling.id} aria-label={`查看同组作品 ${position + 1}`} aria-pressed={sibling.id === id} disabled={busy} onClick={() => { setMessage(''); onNavigate(sibling.id) }}><img src={sibling.image.thumbUrl ?? sibling.image.url} alt="" /></button>)}</div>
-        </div>
-        <aside className="history-inspector"><div className="history-detail-heading"><h2>{toolName(g)}</h2><button className={'btn' + (g.favorite ? ' active' : '')} aria-label={g.favorite ? '取消收藏此作品' : '收藏此作品'} aria-pressed={Boolean(g.favorite)} disabled={busy} onClick={() => void operation(async () => { await ds.setGenerationFavorite([g.id], !g.favorite); detail.reload(); onFavorite() }, g.favorite ? '已取消收藏' : '已收藏')}><Icon name="star" size={16} /></button></div><p className="muted">{new Date(g.createdAt).toLocaleString('zh-CN')}</p>
-          <div className="history-prompt-heading"><h3>提示词</h3><button className="btn" disabled={!g.prompt || busy} onClick={() => void operation(() => navigator.clipboard.writeText(g.prompt ?? ''), '提示词已复制')}><Icon name="copy" size={14} />复制</button></div><p className="history-prompt">{g.prompt || '这条历史没有记录提示词'}</p>
-          <dl className="history-params"><div><dt>模型</dt><dd>{g.modelName || '未记录'}</dd></div><div><dt>比例</dt><dd>{g.ratio || `${g.image.width}:${g.image.height}（原图）`}</dd></div><div><dt>分辨率</dt><dd>{g.resolution || '未记录'}<small>{g.image.width} × {g.image.height} px</small></dd></div><div><dt>生成张数</dt><dd>{g.outputCount ? `${g.outputCount} 张` : '未记录'}</dd></div></dl>
-          <h3>来源项目</h3><Link className="history-source" href={`/v2/canvas/${encodeURIComponent(g.projectId)}?view=split&generation=${encodeURIComponent(g.id)}`}><Icon name="canvas" size={17} /><span>{projectName(g)}</span><Icon name="right" size={15} /></Link>
-          <p className="history-feedback" role="status">{message}</p>
-          <Link className="btn pri history-reuse" href={`/v2/canvas/${encodeURIComponent(g.projectId)}?view=split&reuse=${encodeURIComponent(g.id)}`}><Icon name="wand" size={16} />做同款</Link><small className="muted">带回已记录参数，确认后再生成</small>
-        </aside>
-      </>}
-    </div>
-  </HistoryDialog>
+  const index = Math.max(0, sequence.findIndex(item => item.id === id))
+  const lbItems: LightboxItem[] = sequence.map(item => ({
+    id: item.id,
+    generationId: item.id,
+    projectId: item.projectId,
+    image: item.image,
+    title: `${toolName(item)} · ${projectName(item)}`,
+    prompt: item.prompt,
+    modelName: item.modelName,
+    ratio: item.ratio,
+    resolution: item.resolution,
+    createdAt: item.createdAt,
+    favorite: item.favorite,
+  }))
+
+  return (
+    <Lightbox
+      items={lbItems}
+      index={index}
+      onIndexChange={(nextIdx) => {
+        const target = sequence[nextIdx]
+        if (target) onNavigate(target.id)
+      }}
+      onClose={onClose}
+      onToggleFavorite={async (it) => {
+        try {
+          await ds.setGenerationFavorite([it.id], !it.favorite)
+          detail.reload()
+          onFavorite()
+          toast(it.favorite ? '已取消收藏' : '已收藏')
+        } catch {
+          toast('收藏操作失败，请重试')
+        }
+      }}
+      onUseAsReference={(it) => {
+        onClose()
+        if (it.projectId) {
+          router.push(`/v2/canvas/${encodeURIComponent(it.projectId)}?view=split&generation=${encodeURIComponent(it.id)}`)
+        }
+      }}
+      onRegenerate={(it) => {
+        onClose()
+        if (it.projectId) {
+          router.push(`/v2/canvas/${encodeURIComponent(it.projectId)}?view=split&reuse=${encodeURIComponent(it.id)}`)
+        }
+      }}
+    />
+  )
 }

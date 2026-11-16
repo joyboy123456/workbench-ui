@@ -26,10 +26,12 @@ export interface ComposerProps {
   stopping?: boolean
   placeholder?: string
   autoFocus?: boolean
+  hero?: boolean
+  draft?: { text: string; seq: number } | null
 }
 type Panel = ParameterPanel | 'refs' | 'tools' | 'add' | null
 
-export function Composer({ attachments, onAttachmentsChange, onSend, canvasImages = [], busy, onStop, stopping, placeholder, autoFocus }: ComposerProps) {
+export function Composer({ attachments, onAttachmentsChange, onSend, canvasImages = [], busy, onStop, stopping, placeholder, autoFocus, hero, draft }: ComposerProps) {
   const ds = useV2()
   const toast = useToast()
   const { user, requireAuth } = useV2Auth()
@@ -97,6 +99,15 @@ export function Composer({ attachments, onAttachmentsChange, onSend, canvasImage
     const el = ta.current
     if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 160) + 'px' }
   }, [text])
+  useEffect(() => {
+    if (!draft) return
+    setText(draft.text)
+    requestAnimationFrame(() => {
+      ta.current?.focus()
+      const len = draft.text.length
+      ta.current?.setSelectionRange(len, len)
+    })
+  }, [draft?.seq])
 
   const references = useMemo(() => referenceChoices(canvasImages, assets.data?.products ?? [], assets.data?.models ?? [], assets.data?.brands ?? [], assets.data?.materials ?? []), [canvasImages, assets.data])
   const q = query.trim().toLocaleLowerCase()
@@ -262,16 +273,29 @@ export function Composer({ attachments, onAttachmentsChange, onSend, canvasImage
               }} />)}</div>
             <small>源图：{selectedTool.surfaces.includes('batch') && attachments.length ? `${attachments.length} 张引用图片` : attachments[0]?.label ?? '用 @ 选择，或拖入图片'}{!selectedTool.fields?.length ? ' · 此工具没有额外参数' : ''}</small>
           </div>}
-          <div className="cp-editor">
-            <div className="refs" aria-label="已选引用">{attachments.map(attachment => <span key={`${attachment.kind}:${attachment.id}`} title={attachment.label}>
-              <img src={attachment.image.thumbUrl ?? attachment.image.url} alt="" />{attachment.label}
-              <button type="button" aria-label={`移除引用 ${attachment.label}`} onClick={() => onAttachmentsChange(attachments.filter(item => item.image.id !== attachment.image.id))}><Icon name="x" size={11} /></button>
-            </span>)}</div>
-            <textarea ref={ta} aria-label="描述需求" aria-expanded={panel === 'refs' || panel === 'tools'} role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls={panel === 'refs' || panel === 'tools' ? `${id}-list` : undefined} aria-activedescendant={highlighted >= 0 && (panel === 'refs' || panel === 'tools') ? `${id}-row-${highlighted}` : undefined}
-              value={text} rows={2} placeholder={placeholder ?? '描述要创作的画面，@ 引用图片，/ 选择工具'} maxLength={3600}
-              onChange={event => change(event.target.value)} onKeyDown={keyDown} onClick={() => { if (mention.current) change(text) }}
-              onCompositionStart={() => { composition.current = true }} onCompositionEnd={() => { composition.current = false }}
-              onPaste={event => { const files = Array.from(event.clipboardData.files); if (files.some(file => file.type.startsWith('image/'))) { event.preventDefault(); void upload(files) } }} />
+          <div className={hero ? 'cp-editor cp-editor-hero' : 'cp-editor'}>
+            {hero && (
+              <button
+                type="button"
+                className="cp-upload-slot"
+                aria-label="上传商品图或参考图"
+                onClick={() => void upload()}
+              >
+                <Icon name="plus" size={16} />
+                <span>上传图片</span>
+              </button>
+            )}
+            <div className="cp-editor-main">
+              <div className="refs" aria-label="已选引用">{attachments.map(attachment => <span key={`${attachment.kind}:${attachment.id}`} title={attachment.label}>
+                <img src={attachment.image.thumbUrl ?? attachment.image.url} alt="" />{attachment.label}
+                <button type="button" aria-label={`移除引用 ${attachment.label}`} onClick={() => onAttachmentsChange(attachments.filter(item => item.image.id !== attachment.image.id))}><Icon name="x" size={11} /></button>
+              </span>)}</div>
+              <textarea ref={ta} aria-label="描述需求" aria-expanded={panel === 'refs' || panel === 'tools'} role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls={panel === 'refs' || panel === 'tools' ? `${id}-list` : undefined} aria-activedescendant={highlighted >= 0 && (panel === 'refs' || panel === 'tools') ? `${id}-row-${highlighted}` : undefined}
+                value={text} rows={hero ? 3 : 2} placeholder={placeholder ?? '描述要创作的画面，@ 引用图片，/ 选择工具'} maxLength={3600}
+                onChange={event => change(event.target.value)} onKeyDown={keyDown} onClick={() => { if (mention.current) change(text) }}
+                onCompositionStart={() => { composition.current = true }} onCompositionEnd={() => { composition.current = false }}
+                onPaste={event => { const files = Array.from(event.clipboardData.files); if (files.some(file => file.type.startsWith('image/'))) { event.preventDefault(); void upload(files) } }} />
+            </div>
           </div>
           <div className="cp-shortcuts"><button type="button" aria-label="引用图片" onClick={event => open('refs', event.currentTarget)}>@ <span>引用</span></button><button type="button" aria-label="选择工具" onClick={event => open('tools', event.currentTarget)}>/ <span>工具</span></button><span>{uploading ? '图片上传中…' : `${attachments.length}/10 引用 · 支持粘贴或拖图`}</span></div>
           <div className="ctl cp-params" aria-label="生成参数">

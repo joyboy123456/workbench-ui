@@ -9,11 +9,13 @@ import { createCanvasHistory, type CanvasUpdate } from '@/lib/v2/canvas-history'
 import { canvasFitPad, canvasMotionDuration, isCanvasInput } from '@/lib/v2/fit'
 import { mergeGenerationItem } from '@/lib/v2/generation-progress'
 import { useLoad, useV2, type AgentEvent } from '@/lib/v2/data-source'
-import type { AgentMode, CanvasItem, ChatAttachment, ChatMessage, ImageRef, Project, ToolParams } from '@/lib/v2/types'
+import type { AgentMode, AskMessage, CanvasItem, ChatAttachment, ChatMessage, Project, ToolParams } from '@/lib/v2/types'
 import type { ComposerSubmission } from '../composer'
 import { PENDING_KEY } from '../home-page'
 import { Icon } from '../icons'
-import { EmptyState, Preview, pickFiles, useToast } from '../ui'
+import { Lightbox, type LightboxItem } from '../lightbox'
+import { TaskTray } from '../task-tray'
+import { EmptyState, pickFiles, useToast } from '../ui'
 import { AssetDrawer } from './asset-drawer'
 import { Board } from './board'
 import { ChatPanel, type SessionView } from './chat-panel'
@@ -94,7 +96,9 @@ function CanvasInner({ id }: { id: string }) {
   const routeId = useRef(id)
   routeId.current = id
   const chatAbort = useRef<AbortController | null>(null)
-  const [preview, setPreview] = useState<ImageRef | null>(null)
+  const [previewState, setPreviewState] = useState<{ items: LightboxItem[]; index: number } | null>(null)
+  const [favMap, setFavMap] = useState<Record<string, boolean>>({})
+  const preview = Boolean(previewState)
   const hist = useRef(createCanvasHistory())
   const batch = useRef<{ ids: string[] } | null>(null)
   const focusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -512,6 +516,44 @@ function CanvasInner({ id }: { id: string }) {
     }, 320)
   }, [rf, selected])
 
+  const handleAnswerAsk = useCallback(async (ask: AskMessage, selectedKey: string, answerText: string) => {
+    setMessages((prev) => prev.map((m) => (m.id === ask.id && m.role === 'ask' ? { ...m, answered: { selectedKey, answerText } } : m)))
+    await send(`Q：${ask.question} A：${answerText}`, 'agent')
+  }, [send])
+
+  const handleSkipAsk = useCallback((ask: AskMessage) => {
+    setMessages((prev) => prev.map((m) => (m.id === ask.id && m.role === 'ask' ? { ...m, skipped: true } : m)))
+    toast('已跳过提问')
+  }, [toast])
+
+  const openLightbox = useCallback((pid: string) => {
+    const target = itemsRef.current.find((i) => i.id === pid)
+    if (!target?.image.url) return
+    const usable = itemsRef.current.filter(usableImage)
+    const batchItems = target.toolRunId
+      ? usable.filter((i) => i.toolRunId === target.toolRunId)
+      : usable
+    const list = batchItems.length > 1 ? batchItems : usable
+    const lbItems: LightboxItem[] = list.map((it) => {
+      const genId = it.ref.type === 'generation' ? it.ref.id : undefined
+      return {
+        id: it.id,
+        image: it.image,
+        title: project?.name ?? '画布图片',
+        prompt: messages.find((m) => m.role === 'user')?.text,
+        modelName: 'Nano Banana 2',
+        ratio: it.targetSize ? `${it.targetSize.width}:${it.targetSize.height}` : `${it.image.width}:${it.image.height}`,
+        resolution: '2K',
+        createdAt: it.createdAt,
+        favorite: genId ? Boolean(favMap[genId]) : false,
+        projectId: project?.id,
+        generationId: genId,
+      }
+    })
+    const idx = Math.max(0, lbItems.findIndex((x) => x.id === pid))
+    setPreviewState({ items: lbItems, index: idx })
+  }, [project?.name, project?.id, messages, favMap])
+
   if (loading) {
     return (
       <div className={'cv-root mode-' + view}>
@@ -561,6 +603,8 @@ function CanvasInner({ id }: { id: string }) {
         attachments={attachments}
         onAttachmentsChange={setAttachments}
         onSend={(t, m, submission) => send(t, m, attachments, submission)}
+        onAnswerAsk={handleAnswerAsk}
+        onSkipAsk={handleSkipAsk}
         canvasImages={canvasImages}
         busy={busy || agentActive}
         onStop={ds.stopMessage && (chatSending || agentActive) ? stop : undefined}
@@ -600,7 +644,7 @@ function CanvasInner({ id }: { id: string }) {
           onDownload={download}
           onSaveMaterial={saveMaterial}
           onSetCover={setCover}
-          onPreview={(pid) => { const it = items.find((i) => i.id === pid); if (it?.image.url) setPreview(it.image) }}
+          onPreview={(pid) => openLightbox(pid)}
           onDropAsset={(raw, at) => place([JSON.parse(raw) as ChatAttachment], at)}
           onDropFiles={placeFiles}
           onUpload={async () => placeFiles(await pickFiles())}
@@ -663,7 +707,46 @@ function CanvasInner({ id }: { id: string }) {
 
       </div>
 
-      {preview && <Preview image={preview} onClose={() => setPreview(null)} />}
+      {previewState && (
+        <Lightbox
+          items={previewState.items.map((it) => ({
+            ...it,
+            favorite: it.generationId ? Boolean(favMap[it.generationId]) : it.favorite,
+          }))}
+          index={previewState.index}
+          onIndexChange={(idx) => setPreviewState((s) => (s ? { ...s, index: idx } : null))}
+          onClose={() => setPreviewState(null)}
+          onDownload={(it) => download([it.id])}
+          onToggleFavorite={async (it) => {
+            if (!it.generationId) { toast('仅生成的作品支持收藏'); return }
+            const next = !favMap[it.generationId]
+            try {
+              await ds.setGenerationFavorite([it.generationId], next)
+              setFavMap((m) => ({ ...m, [it.generationId!]: next }))
+              toast(next ? '已收藏' : '已取消收藏')
+            } catch {
+              toast('收藏操作失败，请重试')
+            }
+          }}
+          onUseAsReference={(it) => {
+            addToChat([it.id])
+            setPreviewState(null)
+          }}
+          onRegenerate={(it) => {
+            setPreviewState(null)
+            const def = tools?.find((t) => t.id === 'swap-bg')
+            if (def) {
+              setView('split')
+              setSelected([it.id])
+              setAutoTool({ toolId: def.id, itemId: it.id, previewOnly: true })
+              toast('已带入参数，确认后可再生成')
+            } else {
+              void send('按当前风格再生成一组变体', 'agent', [{ kind: 'canvas', id: it.id, label: '参考图', image: it.image }])
+            }
+          }}
+        />
+      )}
+      <TaskTray />
     </div>
     </GenerationStateProvider>
   )

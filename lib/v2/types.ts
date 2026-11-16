@@ -186,8 +186,23 @@ export interface AssistantStep {
   /** 灰色状态行，如「思考完成」「AI 商品主图」 */
   label: string
   icon: 'think' | 'image' | 'doc' | 'tool'
+  /** 进行中或已完成状态 */
+  status?: 'running' | 'done' | 'failed'
+  /** 思考完成等可折叠步骤的详情内容 */
+  detail?: string
+  /** 是否允许折叠展开 */
+  collapsible?: boolean
   /** 生成中显示 3 / 6 之类 */
   progress?: { done: number; total: number }
+}
+
+export interface AssistantResultMeta {
+  /** 规格行，如 "3:4 · 1536×2048 · Nano Banana 2" */
+  spec?: string
+  /** 「这一版落实的几点」列表 */
+  highlights?: string[]
+  /** 「常见调整方向」可点 chip */
+  suggestions?: string[]
 }
 
 export interface AssistantMessage {
@@ -198,10 +213,50 @@ export interface AssistantMessage {
   results: { id: ID; image?: ImageRef; status: Generation['status'] }[]
   /** 正文：markdown 子集（段落、无序列表） */
   body?: string
+  /** 正在流式输出 */
+  streaming?: boolean
+  /** 出图结果结构化信息 */
+  meta?: AssistantResultMeta
   createdAt: string
 }
 
-export type ChatMessage = UserMessage | AssistantMessage
+export interface AskOption {
+  key: string
+  label: string
+  description?: string
+}
+
+export interface AskMessage {
+  id: ID
+  role: 'ask'
+  /** 遇到歧义时先说一句原因 */
+  reason?: string
+  /** 问题标题 */
+  question: string
+  /** 单选选项 A / B / C */
+  options: AskOption[]
+  /** D 其他输入框占位文案 */
+  otherPlaceholder?: string
+  /** 已回答状态 */
+  answered?: { selectedKey: string; answerText: string }
+  /** 已跳过状态 */
+  skipped?: boolean
+  createdAt: string
+}
+
+export type ChatMessage = UserMessage | AssistantMessage | AskMessage
+
+export interface ActiveTask {
+  id: ID
+  projectId: ID
+  projectName: string
+  title: string
+  phase: 'queued' | 'generating' | 'processing' | 'unconfirmed'
+  progress: number
+  thumbUrl?: string
+  ratio?: string
+  startedAt: string
+}
 
 /* ---------------- 工具 ---------------- */
 
@@ -259,6 +314,10 @@ export interface CaseExample {
   id: ID
   title: string
   image: ImageRef
+  /** 案例分类（用于首页案例区筛选） */
+  category?: 'model' | 'main' | 'detail' | 'style'
+  /** 瀑布流展示比例提示 */
+  aspect?: 'tall' | 'square' | 'wide'
   /** 做同款时用到的工具；缺省走 Agent */
   toolId?: string
   /** 做同款时预填的提示词 */

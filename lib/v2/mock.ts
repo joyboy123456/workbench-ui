@@ -7,7 +7,7 @@ import { downloadGenerationArchive } from './generation-download'
 import { createStressCanvas } from './mock-canvas'
 import { composerOptions } from './composer-options'
 import type {
-  Account, AgentMode, AssistantMessage, BrandKit, CanvasItem, ChatAttachment, ChatMessage,
+  Account, ActiveTask, AgentMode, AskMessage, AssistantMessage, BrandKit, CanvasItem, CaseExample, ChatAttachment, ChatMessage,
   FashionModel, Generation, ImageRef, Material, Product, ProductCategory, Project, ToolCatalogItem, ToolCategoryId, ToolCover, ToolDef, ToolField, ToolParams,
 } from './types'
 import type { AgentEvent, ProductQuery, GenerationQuery, V2DataSource } from './data-source'
@@ -153,17 +153,75 @@ const messagesByProject: Record<string, ChatMessage[]> = {
     { id: 'u1', role: 'user', createdAt: daysAgo(0, 14), text: '这套出 4 张草原主图，模特用林夕，蕾丝领口和流苏腰带要保留。',
       attachments: [att('product', 'p_lace', '蕾丝荷叶领连衣裙', products[0].images[0]), att('model', 'm_linxi', '林夕', models[0].cover)] },
     { id: 'a1', role: 'assistant', createdAt: daysAgo(0, 14),
-      steps: [{ label: '思考完成', icon: 'think' }, { label: 'AI 商品主图', icon: 'image' }],
+      steps: [
+        { label: '画布读取完成', icon: 'doc', status: 'done' },
+        {
+          label: '思考完成',
+          icon: 'think',
+          status: 'done',
+          collapsible: true,
+          detail: '1. 提取商品「蕾丝荷叶领连衣裙」的领口与流苏腰带结构约束；\n2. 绑定模特林夕面部与身形特征；\n3. 设定黄昏侧逆光草原外景，分别规划倚栏、走动、蒙古包前、车旁 4 个机位。',
+        },
+        { label: '使用 Nano Banana 2 生成图片', icon: 'image', status: 'done' },
+      ],
       results: ['g_m1', 'g_m2', 'g_m3', 'g_m4'].map((id) => ({ id, image: generations.find((g) => g.id === id)!.image, status: 'done' as const })),
-      body: '出了：草原主图 4 张（3:4，1100×1473）\n\n这版的处理思路：\n- 版型、蕾丝荷叶领和流苏腰带全部锁定，只换场景和姿势\n- 黄昏侧逆光，草色压暖，让米白蕾丝不发灰\n- 4 张分别是倚栏、走动、蒙古包前、车旁，方便挑主图\n\n想再要两张领口和腰带的近景，或者把车旁那张改成竖版全身，说一声就行。' },
+      meta: {
+        spec: '3:4 · 1536×2048 · Nano Banana 2',
+        highlights: [
+          '版型、蕾丝荷叶领和流苏腰带全部锁定，只换场景和姿势',
+          '黄昏侧逆光，草色压暖，让米白蕾丝不发灰',
+          '4 张分别是倚栏、走动、蒙古包前、车旁，方便挑主图',
+        ],
+        suggestions: ['加两张领口近景特写', '把车旁那张改成竖版全身', '背景草色再压暖一点', '换阴天柔光棚拍'],
+      },
+      body: '已为你生成 4 张草原外景主图，整体保留了蕾丝荷叶领和流苏腰带的细节结构。你可以点击缩略图在画布中查看原图，或直接点击下方调整方向继续微调。' },
     { id: 'u2', role: 'user', createdAt: daysAgo(0, 15), text: '挑 @主图 1 这张，做一套 6 屏详情页。',
       attachments: [att('canvas', 'ci_g_m1', '主图 1', generations[0].image)] },
     { id: 'a2', role: 'assistant', createdAt: daysAgo(0, 15),
-      steps: [{ label: '思考完成', icon: 'think' }, { label: 'AI 商品详情页', icon: 'doc' }],
+      steps: [
+        { label: '画布读取完成', icon: 'doc', status: 'done' },
+        {
+          label: '思考完成',
+          icon: 'think',
+          status: 'done',
+          collapsible: true,
+          detail: '读取主图 1 的色调与构图，匹配品牌规范中的米白底色与宋体标题体系，拆分为首屏卖点、细节、场景前三屏。',
+        },
+        { label: '使用 Nano Banana 2 生成图片', icon: 'doc', status: 'done' },
+      ],
       results: ['g_d1', 'g_d2', 'g_d3'].map((id) => ({ id, image: generations.find((g) => g.id === id)!.image, status: 'done' as const })),
-      body: '详情页前 3 屏好了：首屏卖点、细节、场景。\n\n- 版式沿用店铺品牌的米白底和宋体标题\n- 卖点文案取自商品的卖点字段\n\n后 3 屏（尺码、面料、售后）要不要接着出？' },
+      meta: {
+        spec: '3:4 · 1536×2048 · Nano Banana 2',
+        highlights: [
+          '版式沿用店铺品牌的米白底和宋体标题',
+          '卖点文案取自商品的卖点字段',
+        ],
+        suggestions: ['继续生成后 3 屏（尺码、面料、售后）', '标题字号放大 15%', '换成深色杂志风版式'],
+      },
+      body: '详情页前 3 屏好了：首屏卖点、细节、场景。后 3 屏（尺码、面料、售后）要不要接着出？' },
   ],
-  pj_tweed: [],
+  pj_tweed: [
+    {
+      id: 'u_tweed_1',
+      role: 'user',
+      createdAt: daysAgo(3, 10),
+      text: '帮这套粗花呢套装出主图',
+      attachments: [att('product', 'p_tweed', '米白粗花呢套装', products[1].images[0])],
+    },
+    {
+      id: 'ask_tweed_1',
+      role: 'ask',
+      createdAt: daysAgo(3, 10),
+      reason: '你还没有指定拍摄场景和光线氛围，不同风格会影响模特穿搭和背景质感：',
+      question: '这组粗花呢套装主图希望用哪种场景风格？',
+      options: [
+        { key: 'A', label: '法式街拍外景', description: '咖啡馆外摆、石板路自然光，突出优雅通勤感' },
+        { key: 'B', label: '极简影棚纯色底', description: '高级灰或米白背景，聚光突出粗花呢肌理细节' },
+        { key: 'C', label: '室内复古书房', description: '木质书架与暖色台灯，营造秋日松弛氛围' },
+      ],
+      otherPlaceholder: '描述你想要的其他场景、光线或模特要求…',
+    },
+  ],
   pj_new: [],
 }
 
@@ -328,6 +386,58 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
   }
   const runs = new Map<string, { projectId: string; items: CanvasItem[]; message: AssistantMessage }>()
   const retrying = new Set<string>()
+  const taskListeners = new Set<(tasks: ActiveTask[]) => void>()
+  const collectActiveTasks = (): ActiveTask[] => {
+    const active: ActiveTask[] = []
+    for (const run of runs.values()) {
+      const pName = projects.find(p => p.id === run.projectId)?.name ?? '未命名项目'
+      for (const item of run.items) {
+        if (item.status !== 'running') continue
+        active.push({
+          id: item.id,
+          projectId: run.projectId,
+          projectName: pName,
+          title: run.message.steps.find(s => s.itemId === item.id)?.label ?? '图片生成中',
+          phase: item.generationPhase ?? 'queued',
+          progress: item.progress ?? 0,
+          thumbUrl: item.placeholder?.thumbUrl ?? item.placeholder?.url,
+          ratio: item.targetSize ? `${item.targetSize.width}:${item.targetSize.height}` : undefined,
+          startedAt: item.startedAt ?? nowIso(),
+        })
+      }
+    }
+    if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('demoTasks') === '1' && active.length === 0) {
+      return [
+        {
+          id: 'demo_task_1',
+          projectId: 'pj_west',
+          projectName: '秋日西部 · 蕾丝连衣裙',
+          title: 'AI 商品主图 · 第 1 张',
+          phase: 'generating',
+          progress: 64,
+          thumbUrl: M + 'k-701-look01.jpg',
+          ratio: '3:4',
+          startedAt: nowIso(),
+        },
+        {
+          id: 'demo_task_2',
+          projectId: 'pj_tweed',
+          projectName: '粗花呢套装 · 上新',
+          title: 'AI 电商套图 · 第 2 张',
+          phase: 'queued',
+          progress: 12,
+          thumbUrl: M + 'c10r1.jpg',
+          ratio: '3:4',
+          startedAt: nowIso(),
+        },
+      ]
+    }
+    return active
+  }
+  const notifyTasks = () => {
+    const snapshot = collectActiveTasks()
+    taskListeners.forEach(fn => fn(snapshot))
+  }
   const demoFailure = () => options.failOutputIndex ?? (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('generationDemo') === 'mixed' ? -1 : undefined)
 
   const account: Account = { name: '店铺账号（占位）', avatar: M + 'c7.jpg', credits: 39 }
@@ -357,7 +467,28 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
     async listTools() { return TOOLS },
     async listToolCatalog() { return TOOL_CATALOG },
     async listCases() {
-      return Array.from({ length: 12 }, (_, k) => ({ id: `case${k + 1}`, title: `案例 ${k + 1}（占位）`, image: { id: `case${k + 1}`, url: `/v2-mock/c${k + 1}.jpg`, width: 640, height: 857 } }))
+      const meta: Array<{ title: string; category: CaseExample['category']; aspect: CaseExample['aspect']; prompt: string }> = [
+        { title: '秋日草原复古西装大片', category: 'model', aspect: 'tall', prompt: '秋日草原户外阳光，复古西装外套搭配半身裙，胶片质感街拍' },
+        { title: '极简棚拍针织连衣裙', category: 'model', aspect: 'square', prompt: '纯色高级灰棚拍，柔和侧逆光，凸显针织肌理与垂坠感' },
+        { title: '法式庄园蕾丝度假裙', category: 'style', aspect: 'tall', prompt: '法式庄园午后自然光，蕾丝连衣裙随风微动，氛围感大片' },
+        { title: '丹宁牛仔马甲叠穿主图', category: 'main', aspect: 'wide', prompt: '电商主图构图，牛仔马甲叠穿连衣裙，户外木栅栏背景' },
+        { title: '木珠流苏腰带细节详情页', category: 'detail', aspect: 'tall', prompt: '服饰配饰详情页海报，突出木珠流苏腰带材质与卖点排版' },
+        { title: '蕾丝荷叶领卖点拆解图', category: 'detail', aspect: 'square', prompt: '商品详情页卖点展示，领口蕾丝花边特写与柔和暖调排版' },
+        { title: '都市通勤风衣街拍LOOK', category: 'model', aspect: 'tall', prompt: '城市街头清晨光影，卡其色风衣通勤穿搭，自然抓拍感' },
+        { title: '静物配饰极简光影主图', category: 'main', aspect: 'wide', prompt: '高质感商品静物主图，立体光影对比，干净留白构图' },
+        { title: '设计师买手店橱窗氛围', category: 'style', aspect: 'square', prompt: '极简买手店陈列氛围，暖白建筑光影，高级时尚杂志感' },
+        { title: '夏季清凉亚麻套装穿搭', category: 'model', aspect: 'tall', prompt: '夏日海边微风，浅色亚麻套装自然松弛感穿搭' },
+        { title: '电商大促首图视觉套版', category: 'detail', aspect: 'wide', prompt: '电商活动主视觉套版，商品居中突出，简洁促销信息层级' },
+        { title: '复古胶片感人像Lookbook', category: 'style', aspect: 'tall', prompt: '柯达胶片色调，室内窗边自然光，人物特写与服饰质感' },
+      ]
+      return meta.map((m, k) => ({
+        id: `case${k + 1}`,
+        title: m.title,
+        category: m.category,
+        aspect: m.aspect,
+        prompt: m.prompt,
+        image: { id: `case${k + 1}`, url: `/v2-mock/c${k + 1}.jpg`, width: 640, height: 857 },
+      }))
     },
 
     async listProjects() { hydrate(); return [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) },
@@ -453,12 +584,93 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
       messagesByProject[projectId] = [...(messagesByProject[projectId] ?? []), user]
       onEvent({ type: 'message', message: user })
       hydrate()
+
+      const isAskReply = input.text.startsWith('Q：')
+      const needsClarification = !isAskReply && /(歧义|帮我选|不确定)/.test(input.text)
+      if (needsClarification) {
+        await pause(400)
+        const ask: AskMessage = {
+          id: uid('ask'),
+          role: 'ask',
+          createdAt: nowIso(),
+          reason: '你的描述里还没有确定画面风格与光线方向，先确认一个方向可以避免返工：',
+          question: '这组图片希望采用哪种视觉基调？',
+          options: [
+            { key: 'A', label: '自然日光外景', description: '户外实景感，突出商品真实质感与穿搭氛围' },
+            { key: 'B', label: '极简影棚纯色底', description: '干净纯色背景，聚焦廓形、面料与工艺细节' },
+            { key: 'C', label: '高级杂志棚拍', description: '强明暗对比与造型张力，适合品牌大片主图' },
+          ],
+          otherPlaceholder: '填写其他场景、色调或构图要求…',
+        }
+        messagesByProject[projectId] = [...(messagesByProject[projectId] ?? []), ask]
+        onEvent({ type: 'message', message: structuredClone(ask) })
+        if (!stressEnabled()) persist()
+        onEvent({ type: 'done' })
+        return
+      }
+
       const parents = [...new Set(input.attachments.flatMap(attachment => {
         const item = projectCanvas(projectId).find(item => item.id === attachment.id || item.image.id === attachment.image.id)
         return item ? [item.id] : []
       }))]
-      await generate(projectId, input.generation?.count ?? (input.mode === 'ecom-set' ? 6 : 4), input.mode === 'ecom-set' ? 'AI 电商套图' : 'AI 商品主图',
-        onEvent, sourceImage(projectId, input.attachments), parents, '', input.generation ? { ratio: input.generation.ratio, resolution: input.generation.resolution } : {})
+      const modelLabel = composerOptions().models.find(m => m.id === input.generation?.modelId)?.name ?? 'Nano Banana 2'
+      const ratioStr = input.generation?.ratio ?? '3:4'
+      const resStr = (input.generation?.resolution ?? '2k').toUpperCase()
+      const thinkMsg: AssistantMessage = {
+        id: uid('a'),
+        role: 'assistant',
+        createdAt: nowIso(),
+        steps: [{ label: '输出中…', icon: 'think', status: 'running' }],
+        results: [],
+      }
+      messagesByProject[projectId] = [...(messagesByProject[projectId] ?? []), thinkMsg]
+      onEvent({ type: 'message', message: structuredClone(thinkMsg) })
+
+      await pause(280)
+      thinkMsg.steps = [
+        { label: '画布读取完成', icon: 'doc', status: 'done' },
+        { label: '思考完成', icon: 'think', status: 'running' },
+      ]
+      messagesByProject[projectId] = (messagesByProject[projectId] ?? []).map(m => m.id === thinkMsg.id ? structuredClone(thinkMsg) : m)
+      onEvent({ type: 'message-update', id: thinkMsg.id, patch: { steps: structuredClone(thinkMsg.steps) } })
+
+      await pause(320)
+      thinkMsg.steps = [
+        { label: '画布读取完成', icon: 'doc', status: 'done' },
+        {
+          label: '思考完成',
+          icon: 'think',
+          status: 'done',
+          collapsible: true,
+          detail: `已解析画布上下文与参考图结构，按 ${ratioStr}（${resStr}）规格规划生成，使用 ${modelLabel} 并行出图。`,
+        },
+        { label: `使用 ${modelLabel} 生成图片`, icon: 'image', status: 'done' },
+      ]
+      messagesByProject[projectId] = (messagesByProject[projectId] ?? []).map(m => m.id === thinkMsg.id ? structuredClone(thinkMsg) : m)
+      onEvent({ type: 'message-update', id: thinkMsg.id, patch: { steps: structuredClone(thinkMsg.steps) } })
+
+      await generate(
+        projectId,
+        input.generation?.count ?? (input.mode === 'ecom-set' ? 6 : 4),
+        input.mode === 'ecom-set' ? 'AI 电商套图' : 'AI 商品主图',
+        onEvent,
+        sourceImage(projectId, input.attachments),
+        parents,
+        '',
+        input.generation ? { ratio: input.generation.ratio, resolution: input.generation.resolution } : {},
+        undefined,
+        modelLabel,
+      )
+    },
+
+    async listActiveTasks() {
+      return collectActiveTasks()
+    },
+
+    subscribeTasks(listener) {
+      taskListeners.add(listener)
+      listener(collectActiveTasks())
+      return () => { taskListeners.delete(listener) }
     },
 
     async runTool(projectId, toolId, itemIds, onEvent, params) {
@@ -506,7 +718,7 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
   }
 
   async function generate(projectId: string, count: number, label: string, onEvent: (event: AgentEvent) => void,
-    placeholder?: ImageRef, parents: string[] = [], toolId = '', params: ToolParams = {}, sources = [{ parents, placeholder }]) {
+    placeholder?: ImageRef, parents: string[] = [], toolId = '', params: ToolParams = {}, sources = [{ parents, placeholder }], modelLabel = 'Nano Banana 2') {
     const occupied = [...projectCanvas(projectId)]
     const runId = uid('mock-run')
     const pool = ['k-701-look01.jpg', 'k-701-look02.jpg', 'k-701-look05b.jpg', 'k-701-look08.jpg', 'k-705-look12-shot_1.jpg', 'k-705-look12-shot_2.jpg']
@@ -523,37 +735,52 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
       occupied.push(...placed)
       return placed
     })
-    const message: AssistantMessage = { id: uid('a'), role: 'assistant', createdAt: nowIso(),
-      steps: items.map((item, index) => ({ itemId: item.id, label: `${label} · 第 ${index + 1} 张`, icon: 'image' })), results: [] }
-    const run = { projectId, items, message }
+    const ratioStr = typeof params.ratio === 'string' ? params.ratio : '3:4'
+    const resStr = typeof params.resolution === 'string' ? params.resolution.toUpperCase() : '2K'
+    const targetSize = items[0]?.targetSize ?? { width: 1536, height: 2048 }
+    const specText = `${ratioStr} · ${targetSize.width}×${targetSize.height} · ${modelLabel} · ${resStr}`
+    const message: AssistantMessage = {
+      id: uid('a'),
+      role: 'assistant',
+      createdAt: nowIso(),
+      streaming: true,
+      steps: items.map((item, index) => ({ itemId: item.id, label: `${label} · 第 ${index + 1} 张`, icon: 'image' as const })),
+      results: [],
+    }
+    const run = { projectId, items, message, specText }
     runs.set(runId, run)
     storeCanvas(projectId, occupied.map(item => structuredClone(item)))
     items.forEach(item => onEvent({ type: 'item-add', item: structuredClone(item) }))
     messagesByProject[projectId] = [...(messagesByProject[projectId] ?? []), message]
     onEvent({ type: 'message', message: structuredClone(message) })
     publish(run, onEvent)
+
     const failure = demoFailure()
     await simulate(run, onEvent, items, failure === -1 ? items.length - 1 : failure)
   }
 
-  function publish(run: { projectId: string; items: CanvasItem[]; message: AssistantMessage }, onEvent: (event: AgentEvent) => void) {
+  function publish(run: { projectId: string; items: CanvasItem[]; message: AssistantMessage; specText?: string }, onEvent: (event: AgentEvent) => void) {
     run.message.results = run.items.map(item => ({ id: item.ref.id, status: item.status ?? 'running', ...(item.status === 'done' ? { image: item.image } : {}) }))
     const done = run.items.filter(item => item.status === 'done').length
     const failed = run.items.filter(item => item.status === 'failed').length
-    run.message.body = `${done} / ${run.items.length} 张已完成${failed ? `，${failed} 张失败，可在画布重试` : ''}（mock）`
+    const running = run.items.filter(item => item.status === 'running').length
+    if (running > 0) {
+      run.message.body = `${done} / ${run.items.length} 张已完成${failed ? `，${failed} 张失败` : ''}`
+    }
     messagesByProject[run.projectId] = (messagesByProject[run.projectId] ?? []).map(message => message.id === run.message.id ? structuredClone(run.message) : message)
     if (!stressEnabled()) persist()
     onEvent({ type: 'message-update', id: run.message.id, patch: structuredClone(run.message) })
+    notifyTasks()
   }
 
-  function update(run: { projectId: string; items: CanvasItem[]; message: AssistantMessage }, item: CanvasItem, patch: Partial<CanvasItem>, onEvent: (event: AgentEvent) => void) {
+  function update(run: { projectId: string; items: CanvasItem[]; message: AssistantMessage; specText?: string }, item: CanvasItem, patch: Partial<CanvasItem>, onEvent: (event: AgentEvent) => void) {
     Object.assign(item, patch)
     storeCanvas(run.projectId, projectCanvas(run.projectId).map(current => current.id === item.id ? mergeGenerationItem(current, patch) : current))
     onEvent({ type: 'item-update', id: item.id, patch: structuredClone(patch) })
     publish(run, onEvent)
   }
 
-  async function simulate(run: { projectId: string; items: CanvasItem[]; message: AssistantMessage }, onEvent: (event: AgentEvent) => void, items: CanvasItem[], failIndex?: number) {
+  async function simulate(run: { projectId: string; items: CanvasItem[]; message: AssistantMessage; specText?: string }, onEvent: (event: AgentEvent) => void, items: CanvasItem[], failIndex?: number) {
     await Promise.all(items.map(async (item, index) => {
       await pause(1600 + index * 350)
       update(run, item, { generationPhase: 'generating', progress: 8 }, onEvent)
@@ -567,6 +794,39 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
         ? { status: 'failed', errorMessage: '图片处理未完成，请重试这张图片。', retryAllowed: true }
         : { status: 'done', image: item.image, progress: 100, retryAllowed: false }, onEvent)
     }))
+
+    // 将生成步骤标记为完成
+    run.message.steps = run.message.steps.map(s => (s.itemId || s.status !== 'running' ? s : { ...s, status: 'done' }))
+    const done = run.items.filter(item => item.status === 'done').length
+    const failed = run.items.filter(item => item.status === 'failed').length
+    const finalText = `已为你完成 ${done} 张图片生成${failed ? `（另有 ${failed} 张未完成，可在画布中免费重试）` : ''}。点击上方缩略图可直接定位到画布对应位置，也可以点下方建议快速微调。`
+
+    // 使用定时器分段模拟打字机流式回复
+    const chunks = finalText.match(/.{1,12}/g) ?? [finalText]
+    let acc = ''
+    run.message.streaming = true
+    for (const chunk of chunks) {
+      acc += chunk
+      run.message.body = acc
+      messagesByProject[run.projectId] = (messagesByProject[run.projectId] ?? []).map(m => m.id === run.message.id ? structuredClone(run.message) : m)
+      onEvent({ type: 'message-update', id: run.message.id, patch: { steps: structuredClone(run.message.steps), body: acc, streaming: true } })
+      await pause(55)
+    }
+
+    run.message.streaming = false
+    run.message.meta = {
+      spec: run.specText ?? '3:4 · 1536×2048 · Nano Banana 2',
+      highlights: [
+        '严格锁定商品主体版型、材质纹理与关键细节',
+        '统一光影色温与构图比例，保证同批次视觉连贯',
+        '保留画布溯源关系，支持单张局部微调或高清放大',
+      ],
+      suggestions: ['再出一组近景细节图', '背景光影更柔和一些', '换成极简纯色棚拍背景'],
+    }
+    messagesByProject[run.projectId] = (messagesByProject[run.projectId] ?? []).map(m => m.id === run.message.id ? structuredClone(run.message) : m)
+    if (!stressEnabled()) persist()
+    onEvent({ type: 'message-update', id: run.message.id, patch: structuredClone(run.message) })
+    notifyTasks()
     onEvent({ type: 'done' })
   }
 

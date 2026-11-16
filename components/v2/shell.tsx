@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useLoad, useV2 } from '@/lib/v2/data-source'
 import { Icon } from './icons'
+import { TaskTray } from './task-tray'
 import { useV2Auth } from './auth'
 
 export const SIDEBAR_STORAGE_KEY = 'v2:sidebar-collapsed'
@@ -139,6 +140,7 @@ export function Shell({ children }: { children: ReactNode }) {
         {!user && <div className="guest-topbar"><button className="btn pri" disabled={loading} onClick={() => { void requireAuth() }}>{loading ? '检查登录…' : '登录'}</button></div>}
         {children}
       </main>
+      <TaskTray />
     </div>
   )
 }

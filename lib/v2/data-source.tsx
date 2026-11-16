@@ -7,7 +7,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState, type Re
 import type { V2SessionSource } from './session'
 import type { ComposerGeneration, ComposerOptions } from './composer-options'
 import type {
-  Account, AgentMode, CaseExample, ToolCatalogItem, AssistantMessage, BrandKit, CanvasItem, ChatAttachment, ChatMessage,
+  Account, ActiveTask, AgentMode, CaseExample, ToolCatalogItem, AssistantMessage, BrandKit, CanvasItem, ChatAttachment, ChatMessage,
   ComposerReferences, FashionModel, Generation, GenerationKind, Material, Product, ProductCategory, Project, ToolDef, ToolParams,
 } from './types'
 
@@ -75,6 +75,9 @@ export interface V2DataSource extends V2SessionSource {
   /** API-only task recovery; cleanup stops polling when the canvas unmounts. */
   watchToolRuns?(projectId: string, onEvent: (e: AgentEvent) => void): () => void
   retryToolRun?(projectId: string, runId: string, onEvent: (e: AgentEvent) => void): Promise<void>
+  /** 任务托盘：获取及订阅正在运行的生成任务 */
+  listActiveTasks?(): Promise<ActiveTask[]>
+  subscribeTasks?(listener: (tasks: ActiveTask[]) => void): () => void
 }
 
 const Ctx = createContext<V2DataSource | null>(null)
