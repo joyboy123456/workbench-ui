@@ -54,7 +54,7 @@ export function HomePage() {
   const [atts, setAtts] = useState<ChatAttachment[]>([])
   const [entry, setEntry] = useState<Entry>('chat')
   const [genTab, setGenTab] = useState<GenTab>('all')
-  const { data: projects, loading: loadingProjects } = useLoad((d) => d.listProjects(), [user?.id], !!user)
+  const { data: projects } = useLoad((d) => d.listProjects(), [user?.id], !!user)
   const { data: catalog, loading: loadingCatalog } = useLoad((d) => d.listToolCatalog())
   const { data: cases } = useLoad((d) => d.listCases())
   const { data: gens, loading: loadingGens } = useLoad(
@@ -69,7 +69,6 @@ export function HomePage() {
   const { start: startTool, busy: toolBusy } = useStartTool()
 
   const view = entry === 'canvas' ? 'split' : 'chat'
-  const strip = (projects ?? []).filter((p) => p.cover).slice(0, 3)
   const scenes = useMemo(() => pickScenes(catalog ?? []), [catalog])
   const projectName = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p.name])), [projects])
 
@@ -82,10 +81,6 @@ export function HomePage() {
   }
   const start = (text: string, mode: AgentMode, attachments = atts, submission?: ComposerSubmission) =>
     requireAuth(() => startProject(text, mode, attachments, submission))
-  const createEmpty = () => requireAuth(async () => {
-    const p = await ds.createProject({})
-    router.push(`/v2/canvas/${p.id}?view=${view}`)
-  })
   const startCase = (c: CaseExample) =>
     start(c.prompt ?? `参考这个案例做同款：${c.title}`, 'agent', [{ kind: 'material', id: c.id, label: c.title, image: c.image }])
 
@@ -97,24 +92,7 @@ export function HomePage() {
         <SlidingTabs tabs={ENTRY_TABS} active={entry} onChange={setEntry} style={{ margin: '0 auto' }} />
       </section>
 
-      <div className="hm-strip">
-        <button type="button" className="hm-new" onClick={createEmpty}>
-          <span className="hm-new-ic"><Icon name="plus" size={18} /></span>
-          <span>{entry === 'canvas' ? '新建空白画布' : '新建项目'}</span>
-        </button>
-        {loadingProjects && !projects
-          ? [0, 1, 2].map((i) => <div key={i} className="hm-strip-cell skel" />)
-          : [0, 1, 2].map((i) => {
-              const p = strip[i]
-              if (!p) return <div key={i} className="hm-strip-cell empty" aria-hidden />
-              return (
-                <Link key={p.id} href={`/v2/canvas/${p.id}?view=split`} className="hm-strip-cell" title={p.name}>
-                  <img src={p.cover!.thumbUrl ?? p.cover!.url} alt="" />
-                  <span className="hm-strip-cap">{p.name}</span>
-                </Link>
-              )
-            })}
-      </div>
+      <Showcase cases={cases ?? []} />
 
       <div className="hm-composer">
         <Composer
@@ -212,6 +190,31 @@ function CaseBanner({ cases, onPick }: { cases: CaseExample[]; onPick: (c: CaseE
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/** 输入框上方的展示条：只做氛围展示，不可点击（同类产品惯例）。中间一张略大，定时轮换 */
+function Showcase({ cases }: { cases: CaseExample[] }) {
+  // 跳过左下轮播用的前 4 个案例，避免同一张图出现两次
+  const pool = cases.length >= 7 ? cases.slice(4) : cases
+  const imgs = pool.map((c) => c.image.thumbUrl ?? c.image.url)
+  const [k, setK] = useState(0)
+  useEffect(() => {
+    if (imgs.length < 4) return
+    const t = window.setInterval(() => setK((i) => (i + 1) % imgs.length), 4500)
+    return () => window.clearInterval(t)
+  }, [imgs.length])
+  return (
+    <div className="hm-show" aria-hidden>
+      {[0, 1, 2].map((slot) => {
+        const src = imgs.length ? imgs[(k + slot) % imgs.length] : undefined
+        return (
+          <div key={slot} className={'hm-show-cell' + (slot === 1 ? ' mid' : '')}>
+            {src && <img key={src} src={src} alt="" />}
+          </div>
+        )
+      })}
     </div>
   )
 }
