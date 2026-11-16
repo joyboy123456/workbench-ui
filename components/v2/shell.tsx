@@ -65,12 +65,12 @@ export function Shell({ children }: { children: ReactNode }) {
             aria-label={collapsed ? '展开侧栏' : '收起侧栏'}
             data-testid="sidebar-toggle"
           >
-            <Icon name={collapsed ? 'sidebar-open' : 'sidebar'} size={17} />
+            <Icon name={collapsed ? 'sidebar-open' : 'sidebar'} size={18} />
           </button>
         </div>
 
         <button className="rail-create" onClick={create} title="新建项目" aria-label="新建项目">
-          <Icon name="plus" size={17} />
+          <Icon name="plus" size={18} />
           {!collapsed && <span>新建项目</span>}
         </button>
 

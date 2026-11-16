@@ -211,7 +211,7 @@ export function EmptyState({ icon = 'img', title, subtitle, action }: { icon?: I
       <div className="empty-ico"><Icon name={icon} size={22} /></div>
       <div className="empty-title">{title}</div>
       {subtitle && <div className="empty-sub">{subtitle}</div>}
-      {action && <div style={{ marginTop: 6 }}>{action}</div>}
+      {action && <div className="empty-act">{action}</div>}
     </div>
   )
 }

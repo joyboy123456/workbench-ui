@@ -40,6 +40,7 @@ export function HomePage() {
     <Shell>
       <section className="hero">
         <h1>今天要给哪个商品出图？</h1>
+        <p className="hero-sub">上传商品图或引用资产，快速生成电商主图、详情页与模特图</p>
         <Composer
           attachments={atts}
           onAttachmentsChange={setAtts}
