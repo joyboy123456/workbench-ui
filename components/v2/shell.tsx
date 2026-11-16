@@ -117,10 +117,6 @@ export function Shell({ children }: { children: ReactNode }) {
         <div className="rail-foot">
           {!user ? <span className="rail-guest" title="登录后保存创作">{collapsed ? '品' : '登录后保存你的创作'}</span> : collapsed ? (
             <>
-              <span className="rail-cred-mini tnum" title={`剩余积分 ${account?.credits ?? '–'}`}>
-                <Icon name="zap" size={12} />
-                <b>{account?.credits ?? '–'}</b>
-              </span>
               <div
                 className="av"
                 title={account?.name}
@@ -135,10 +131,6 @@ export function Shell({ children }: { children: ReactNode }) {
                 style={account?.avatar ? { backgroundImage: `url(${account.avatar})` } : undefined}
               />
               <span className="rail-uname">{account?.name ?? '店铺账号'}</span>
-              <span className="rail-cred tnum" title="剩余积分">
-                <Icon name="zap" size={12} />
-                {account?.credits ?? '–'}
-              </span>
             </div>
           )}
         </div>

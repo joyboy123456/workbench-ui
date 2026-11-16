@@ -15,7 +15,7 @@ export function V2Root({ children }: { children: ReactNode }) {
       <V2Provider source={source}>
         <ToastProvider><V2AuthProvider>{children}</V2AuthProvider></ToastProvider>
       </V2Provider>
-      <div className="proto-note">V2 预览 · mock 数据，商品名、模特名、张数、积分均为占位</div>
+      <div className="proto-note">V2 预览 · mock 数据，商品名、模特名、张数均为占位</div>
     </div>
   )
 }

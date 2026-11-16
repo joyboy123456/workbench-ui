@@ -164,7 +164,7 @@ function Cover({ c, interactive }: { c: ToolCover; interactive?: boolean }) {
   )
 }
 
-function useStartTool() {
+export function useStartTool() {
   const ds = useV2()
   const router = useRouter()
   const { requireAuth } = useV2Auth()
