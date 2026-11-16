@@ -365,7 +365,15 @@ export function summarizeProjectTitle(text: string, attachments: ChatAttachment[
     return combined.length <= 18 ? combined : `${shortSub.slice(0, 8)} · ${suffix.slice(0, 6)}`
   }
 
-  const core = cleanedText
+  // 去掉「帮我选一个风格」这类求助分句，再取「这件/这套…」后的品类名 + 场景标签
+  const body = cleanedText.split(/\s+/).filter(seg => !/(帮我选|不确定|歧义)/.test(seg)).join(' ')
+  const subjectMatch = /(?:这件|这套|这款|这个|这条|这双|这顶|这只|这批)\s*([^\s\d出做拍生成的]{2,8}?)(?=出|做|拍|生成|的|\s|\d|$)/.exec(body)
+  if (subjectMatch) {
+    const suffix = tags.length ? tags.join('') : (mode === 'ecom-set' ? '详情套图' : '主图')
+    return `${subjectMatch[1]}${suffix}`.slice(0, 16)
+  }
+
+  const core = body
     .replace(/^(请|帮我|帮忙|麻烦)?(给|为|把)?(这套|这件|这个|这张|上面|当前)?(生成|做一套|出一套|出|做|拍)?(\d+\s*[张屏组套])?/, '')
     .replace(/(不确定|歧义|帮我选).*$/, '')
     .trim()

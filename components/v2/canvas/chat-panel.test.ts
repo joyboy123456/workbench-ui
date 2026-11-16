@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { V2Provider } from '@/lib/v2/data-source'
 import { createMockDataSource, summarizeProjectTitle } from '@/lib/v2/mock'
 import type { CanvasItem, ChatAttachment, ChatMessage } from '@/lib/v2/types'
-import { ChatPanel, type ChatPanelProps } from './chat-panel'
+import { ChatPanel, parseAskAnswer, type ChatPanelProps } from './chat-panel'
 import { extractActiveReferences, findCanvasItemForReference, ReferencePanel } from './reference-panel'
 import { V2AuthProvider } from '../auth'
 
@@ -109,8 +109,9 @@ test('chat renders running result placeholders with target aspect ratio, glow sw
   assert.match(html, /generation-scan/)
   assert.match(html, /48%/)
   assert.match(html, /生成中/)
-  assert.match(html, /data-testid="auto-expand-switch"/)
-  assert.match(html, /aria-checked="false"/)
+  // 开关只放在项目菜单里，头部不再重复；本轮不展示积分
+  assert.doesNotMatch(html, /data-testid="auto-expand-switch"/)
+  assert.doesNotMatch(html, /fh-cred/)
   assert.match(html, /rs-card wide/)
 })
 
@@ -193,4 +194,15 @@ test('mock first-round reply generates concise project title and preserves manua
   }, () => {})
   const afterGen = await ds.getProject(project.id)
   assert.equal(afterGen?.project.name, '我的定制标题')
+})
+
+test('ask answers render as the chosen answer with the question as a small label', () => {
+  assert.deepEqual(parseAskAnswer('Q：这组图片希望采用哪种视觉基调？ A：自然日光外景'), { question: '这组图片希望采用哪种视觉基调', answer: '自然日光外景' })
+  assert.equal(parseAskAnswer('普通消息'), null)
+  assert.equal(parseAskAnswer('Q：问题 A：'), null)
+})
+
+test('mock title keeps garment and scene instead of cutting the prompt mid-word', () => {
+  const title = summarizeProjectTitle('帮我选一个风格，给这件针织开衫出 4 张外景主图', [], 'agent')
+  assert.equal(title, '针织开衫外景主图')
 })

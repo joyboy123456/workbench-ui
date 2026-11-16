@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { V2Root } from '@/components/v2/root'
+import '@xyflow/react/dist/style.css'
 import './v2.css'
 
 export const metadata = { title: '电商素材工作台 · V2 预览' }

@@ -58,6 +58,27 @@ export function GenerationStep({ itemId, label }: { itemId: string; label: strin
   </div>
 }
 
+/** 同一批次的逐张进度合并成一行；单张进度只在占位卡上显示 */
+export function GenerationBatchStep({ itemIds, label }: { itemIds: string[]; label: string }) {
+  const { outputs } = useContext(Context)
+  const states = itemIds.map(id => outputs.get(id)?.item.status)
+  const total = itemIds.length
+  const done = states.filter(st => st === 'done').length
+  const failed = states.filter(st => st === 'failed').length
+  const active = states.some(st => st === 'running')
+  const base = label.replace(/\s*·\s*第\s*\d+\s*张$/, '')
+  const status = active
+    ? `${done} / ${total}`
+    : failed
+      ? `${done} 张完成 · ${failed} 张未完成`
+      : '已完成'
+  return <div className={'sl generation-step' + (active ? ' active' : ' done') + (failed && !active ? ' failed' : '')} data-output-ids={itemIds.join(' ')}>
+    <Icon name={failed && !active ? 'alert' : active ? 'img' : 'check'} size={12} />
+    <span className="sl-txt">{base} · 生成 {total} 张 · <span className="tnum">{status}</span></span>
+    {active && <i className="pulse-dot" aria-hidden />}
+  </div>
+}
+
 export function GenerationArtwork({ variant }: { variant: Variant }) {
   return <div className={`generation-art generation-art-${variant}`} aria-hidden>
     {variant === 'A' ? <><i className="generation-scan" /><div className="generation-ticks">{[0, 1, 2, 3, 4].map(i => <i key={i} />)}</div></>
@@ -68,7 +89,9 @@ export function GenerationArtwork({ variant }: { variant: Variant }) {
 
 export function GenerationVariantPicker() {
   const { variant } = useContext(Context)
-  if (process.env.NODE_ENV === 'production') return null
+  // 调试用：仅在开发环境且地址带 ?debug=1 时显示，默认方案为 A
+  const debug = useSearchParams()?.get('debug') === '1'
+  if (process.env.NODE_ENV === 'production' || !debug) return null
   return <div className="generation-variants" role="group" aria-label="生成动效方案">
     <span>生成动效</span>
     {(['A', 'B', 'C'] as const).map((value, index) => <button key={value} aria-pressed={variant === value} onClick={() => {

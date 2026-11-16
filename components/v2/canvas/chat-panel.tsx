@@ -6,7 +6,7 @@ import { Composer, type ComposerSubmission } from '../composer'
 import { Icon } from '../icons'
 import { useDismiss, useToast } from '../ui'
 import { AskCard } from './ask-card'
-import { GenerationArtwork, GenerationStep, useChatResultOutput } from './generation-state'
+import { GenerationArtwork, GenerationBatchStep, useChatResultOutput } from './generation-state'
 
 export type SessionView = 'chat' | 'split'
 
@@ -279,28 +279,10 @@ export function ChatPanel(p: ChatPanelProps) {
         <div className="ib">
           {isChatView ? (
             <>
-              <span className="fh-cred tnum" title="剩余积分">
-                <Icon name="zap" size={12} />
-                {p.credits ?? '–'}
-              </span>
               <span
                 className="fh-av"
                 style={p.avatar ? { backgroundImage: `url(${p.avatar})` } : undefined}
               />
-              {p.onAutoExpandCanvasChange && (
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={Boolean(p.autoExpandCanvas)}
-                  className={'fh-auto-sw' + (p.autoExpandCanvas ? ' on' : '')}
-                  onClick={() => p.onAutoExpandCanvasChange?.(!p.autoExpandCanvas)}
-                  title="开启后，确认开始出图时自动切成「对话 · 参考 · 画布」；关闭时保持纯对话，点图再展开"
-                  data-testid="auto-expand-switch"
-                >
-                  <span className="sw-track" aria-hidden><i /></span>
-                  <span>出图自动展画布</span>
-                </button>
-              )}
               <button className="ibtn" title="新建项目" aria-label="新建项目" onClick={p.onNewProject}>
                 <Icon name="plus" size={16} />
               </button>
@@ -361,6 +343,8 @@ export function ChatPanel(p: ChatPanelProps) {
                 role="switch"
                 aria-checked={Boolean(p.autoExpandCanvas)}
                 className="mi"
+                data-testid="auto-expand-switch"
+                title="开启后，确认开始出图时自动切成「对话 · 参考 · 画布」；关闭时保持纯对话，点图再展开"
                 onClick={() => p.onAutoExpandCanvasChange?.(!p.autoExpandCanvas)}
               >
                 <Icon name="canvas" />
@@ -395,6 +379,15 @@ export function ChatPanel(p: ChatPanelProps) {
           )}
           {p.messages.map((m) => {
             if (m.role === 'user') {
+              const qa = parseAskAnswer(m.text)
+              if (qa) {
+                return (
+                  <div key={m.id} className="ub ub-answer">
+                    <span className="ub-q" title={qa.question}>回答 · {qa.question}</span>
+                    <span className="ub-a">{qa.answer}</span>
+                  </div>
+                )
+              }
               return (
                 <div key={m.id} className="ub">
                   {m.attachments.length > 0 && (
@@ -423,7 +416,12 @@ export function ChatPanel(p: ChatPanelProps) {
             return (
               <div key={m.id} className="ab">
                 {m.steps.map((s, i) => {
-                  if (s.itemId) return <GenerationStep key={s.itemId} itemId={s.itemId} label={s.label} />
+                  if (s.itemId) {
+                    if (i > 0 && m.steps[i - 1].itemId) return null
+                    const run: string[] = []
+                    for (let j = i; j < m.steps.length && m.steps[j].itemId; j += 1) run.push(m.steps[j].itemId!)
+                    return <GenerationBatchStep key={s.itemId} itemIds={run} label={s.label} />
+                  }
                   const active = s.status === 'running' || (s.status !== 'done' && s.status !== 'failed' && (s.label.includes('中') || Boolean(s.progress && s.progress.done < s.progress.total)))
                   const done = !active && s.status !== 'failed'
                   const canExpand = Boolean(s.collapsible || s.detail)
@@ -545,6 +543,13 @@ export function ChatPanel(p: ChatPanelProps) {
       </div>
     </aside>
   )
+}
+
+/** 提问卡回答以「Q：问题 A：答案」发送；气泡里只展示答案，问题作小标签 */
+export function parseAskAnswer(text: string): { question: string; answer: string } | null {
+  const m = /^Q：([\s\S]*?)\s*A：([\s\S]*)$/.exec(text)
+  if (!m || !m[2].trim()) return null
+  return { question: m[1].trim().replace(/[?？]$/, ''), answer: m[2].trim() }
 }
 
 /** 把正文里的 @标签 渲染成带缩略图的引用 */

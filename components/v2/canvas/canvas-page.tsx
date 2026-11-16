@@ -815,7 +815,6 @@ function CanvasInner({ id }: { id: string }) {
           <button onClick={() => download(selected.length ? selected : items.map((i) => i.id))}>
             <Icon name="dl" size={14} />导出
           </button>
-          <span><Icon name="zap" size={12} /> {account?.credits ?? '–'}</span>
           <span className="av" style={account?.avatar ? { backgroundImage: `url(${account.avatar})` } : undefined} />
         </div>
 
