@@ -3170,24 +3170,82 @@
   .v2 .hm-gens { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-/* 展示条（纯展示，不可点击） */
-.v2 .hm-show {
-  max-width: 920px;
-  margin: 22px auto 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr);
-  align-items: center;
-  gap: var(--sp-12);
+/* 首屏：点阵粒子背景 + 渐变标题 + 分段切换 + 流光输入框（参考即梦首页的氛围层，Nightfall 风格：深色底上的蓝调微光） */
+.v2 .hm-top {
+  position: relative;
+  margin: -28px -40px 0;
+  padding: 72px 40px 8px;
+  isolation: isolate;
+}
+.v2 .hm-particles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
   pointer-events: none;
-  user-select: none;
-  animation: v2-fade-up 440ms var(--ease-out) 40ms both;
+  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
 }
-.v2 .hm-show-cell {
-  aspect-ratio: 16 / 10;
-  border-radius: var(--r-card);
-  overflow: hidden;
-  background: var(--panel);
-  opacity: 0.72;
+.v2 .hm-hero { margin-top: 0; }
+.v2 .hm-hero h1 { font-size: 32px; }
+.v2 .hm-hero h1 em {
+  font-style: normal;
+  background: linear-gradient(100deg, #ffb27f 0%, #ff8f6b 35%, #8fc8ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
-.v2 .hm-show-cell.mid { opacity: 1; box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.6); }
-.v2 .hm-show-cell img { width: 100%; height: 100%; object-fit: cover; animation: v2-fade 600ms var(--ease-out) both; }
+.v2 .hm-seg {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 280px;
+  padding: 3px;
+  border-radius: var(--r-pill);
+  background: #2a2a2a;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+.v2 .hm-seg button {
+  position: relative;
+  z-index: 1;
+  height: 34px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-14);
+  color: var(--tx2);
+  transition: color var(--dur-med) var(--ease-out);
+}
+.v2 .hm-seg button:hover { color: var(--tx); }
+.v2 .hm-seg button.on { color: #141414; font-weight: var(--fw-title); }
+.v2 .hm-seg button:focus-visible { outline: 2px solid var(--acc-focus); outline-offset: 2px; }
+.v2 .hm-seg-ind {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  border-radius: var(--r-pill);
+  background:
+    radial-gradient(60% 120% at 25% 50%, rgba(255, 178, 127, 0.55), transparent 70%),
+    radial-gradient(60% 120% at 80% 50%, rgba(143, 200, 255, 0.6), transparent 70%),
+    #fff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  transition: transform 320ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* 输入框：慢速流动的斜向光带 */
+.v2 .hm-composer .cp2 {
+  background:
+    radial-gradient(40% 140% at var(--hm-sheen, 20%) 0%, rgba(120, 186, 255, 0.07), transparent 70%),
+    linear-gradient(115deg, #232323 0%, #26292d 50%, #232323 100%);
+  background-size: 100% 100%, 220% 100%;
+  animation: hm-sheen 9s ease-in-out infinite alternate;
+}
+@property --hm-sheen { syntax: '<percentage>'; inherits: false; initial-value: 20%; }
+@keyframes hm-sheen {
+  from { --hm-sheen: 15%; background-position: 0 0, 0% 0; }
+  to { --hm-sheen: 85%; background-position: 0 0, 100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2 .hm-composer .cp2 { animation: none; }
+  .v2 .hm-seg-ind { transition: none; }
+}

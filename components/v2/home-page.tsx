@@ -10,6 +10,7 @@ import { Icon } from './icons'
 import { Shell } from './shell'
 import { SlidingTabs, relTime } from './ui'
 import { useV2Auth } from './auth'
+import { HeroParticles } from './hero-particles'
 import { useStartTool } from './tools-page'
 
 export const PENDING_KEY = (projectId: string) => `v2:pending:${projectId}`
@@ -86,22 +87,30 @@ export function HomePage() {
 
   return (
     <Shell>
-      <section className="hm-hero">
-        <h1>今天给哪件商品出图？</h1>
-        <p className="hm-sub">从一件商品开始，完成整套电商视觉</p>
-        <SlidingTabs tabs={ENTRY_TABS} active={entry} onChange={setEntry} style={{ margin: '0 auto' }} />
-      </section>
+      <div className="hm-top">
+        <HeroParticles />
+        <section className="hm-hero">
+          <h1>今天给哪件<em>商品</em>出图？</h1>
+          <p className="hm-sub">从一件商品开始，完成整套电商视觉</p>
+          <div className="hm-seg" role="tablist" aria-label="创作方式">
+            {ENTRY_TABS.map((t) => (
+              <button key={t.id} type="button" role="tab" aria-selected={entry === t.id} className={entry === t.id ? 'on' : ''} onClick={() => setEntry(t.id)}>
+                {t.name}
+              </button>
+            ))}
+            <span className="hm-seg-ind" style={{ transform: `translateX(${entry === 'chat' ? 0 : 100}%)` }} aria-hidden />
+          </div>
+        </section>
 
-      <Showcase cases={cases ?? []} />
-
-      <div className="hm-composer">
-        <Composer
-          attachments={atts}
-          onAttachmentsChange={setAtts}
-          onSend={(t, m, submission) => start(t, m, atts, submission)}
-          placeholder="描述你想要的画面，或选择下方场景开始"
-          autoFocus
-        />
+        <div className="hm-composer">
+          <Composer
+            attachments={atts}
+            onAttachmentsChange={setAtts}
+            onSend={(t, m, submission) => start(t, m, atts, submission)}
+            placeholder={entry === 'canvas' ? '描述你想要的画面，生成结果会放进自由画布' : '上传商品图或用 @ 引用资产，描述你想要的画面'}
+            autoFocus
+          />
+        </div>
       </div>
 
       <div className="hm-scenes">
@@ -194,27 +203,3 @@ function CaseBanner({ cases, onPick }: { cases: CaseExample[]; onPick: (c: CaseE
   )
 }
 
-/** 输入框上方的展示条：只做氛围展示，不可点击（同类产品惯例）。中间一张略大，定时轮换 */
-function Showcase({ cases }: { cases: CaseExample[] }) {
-  // 跳过左下轮播用的前 4 个案例，避免同一张图出现两次
-  const pool = cases.length >= 7 ? cases.slice(4) : cases
-  const imgs = pool.map((c) => c.image.thumbUrl ?? c.image.url)
-  const [k, setK] = useState(0)
-  useEffect(() => {
-    if (imgs.length < 4) return
-    const t = window.setInterval(() => setK((i) => (i + 1) % imgs.length), 4500)
-    return () => window.clearInterval(t)
-  }, [imgs.length])
-  return (
-    <div className="hm-show" aria-hidden>
-      {[0, 1, 2].map((slot) => {
-        const src = imgs.length ? imgs[(k + slot) % imgs.length] : undefined
-        return (
-          <div key={slot} className={'hm-show-cell' + (slot === 1 ? ' mid' : '')}>
-            {src && <img key={src} src={src} alt="" />}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
