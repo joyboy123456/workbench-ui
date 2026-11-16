@@ -208,9 +208,20 @@ export interface AssistantResultMeta {
 export interface AssistantMessage {
   id: ID
   role: 'assistant'
+  /** Agent 首轮回复时给出的简短项目标题 */
+  title?: string
   steps: AssistantStep[]
   /** 本轮产出的图（缩略图行） */
-  results: { id: ID; image?: ImageRef; status: Generation['status'] }[]
+  results: {
+    id: ID
+    image?: ImageRef
+    status: Generation['status']
+    itemId?: ID
+    ratio?: string
+    targetSize?: { width: number; height: number }
+    progress?: number
+    generationPhase?: CanvasItem['generationPhase']
+  }[]
   /** 正文：markdown 子集（段落、无序列表） */
   body?: string
   /** 正在流式输出 */
@@ -229,6 +240,8 @@ export interface AskOption {
 export interface AskMessage {
   id: ID
   role: 'ask'
+  /** Agent 首轮回复时给出的简短项目标题 */
+  title?: string
   /** 遇到歧义时先说一句原因 */
   reason?: string
   /** 问题标题 */

@@ -20,8 +20,11 @@ import { AssetDrawer } from './asset-drawer'
 import { Board } from './board'
 import { ChatPanel, type SessionView } from './chat-panel'
 import { GenerationStateProvider, GenerationVariantPicker } from './generation-state'
+import { extractActiveReferences, findCanvasItemForReference, ReferencePanel } from './reference-panel'
 
 const SCALE = 150 / 1100
+const AUTO_EXPAND_KEY = 'v2:auto-expand-canvas:v1'
+const MANUAL_TITLE_KEY = (projectId: string) => `v2:manual-title:${projectId}`
 let seq = 0
 const uid = (p: string) => `${p}_${Date.now().toString(36)}${(seq++).toString(36)}`
 
@@ -56,6 +59,24 @@ function CanvasInner({ id }: { id: string }) {
     return 'split'
   })
   const [chatCollapsed, setChatCollapsed] = useState(false)
+  const [refCollapsed, setRefCollapsed] = useState(false)
+  const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null)
+  const [autoExpandCanvas, setAutoExpandCanvas] = useState(false)
+  const autoExpandRef = useRef(false)
+  autoExpandRef.current = autoExpandCanvas
+  const viewRef = useRef<SessionView>(view)
+  viewRef.current = view
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(AUTO_EXPAND_KEY) === '1') setAutoExpandCanvas(true)
+    } catch { /* ignore storage errors */ }
+  }, [])
+
+  const handleAutoExpandChange = useCallback((next: boolean) => {
+    setAutoExpandCanvas(next)
+    try { localStorage.setItem(AUTO_EXPAND_KEY, next ? '1' : '0') } catch { /* ignore storage errors */ }
+  }, [])
 
   const setView = useCallback((next: SessionView) => {
     setViewState(next)
@@ -115,10 +136,18 @@ function CanvasInner({ id }: { id: string }) {
   }, [drawer, drawerClosing, closeDrawer])
 
   const initProjectRef = useRef<string | null>(null)
+  const manualTitleRef = useRef(false)
+  const autoTitledRef = useRef(false)
   useEffect(() => {
     if (!loaded || initProjectRef.current === loaded.project.id) return
     initProjectRef.current = loaded.project.id
+    const savedManual = typeof window !== 'undefined' && (() => {
+      try { return localStorage.getItem(MANUAL_TITLE_KEY(loaded.project.id)) === '1' } catch { return false }
+    })()
+    manualTitleRef.current = savedManual
+    autoTitledRef.current = loaded.project.name !== '未命名项目'
     setBusy(false); setAgentActive(false); setChatSending(false); setStopping(false); batch.current = null
+    setFocusedMessageId(null); setRefCollapsed(false)
     setProject(loaded.project); setItemsRaw(loaded.items); setMessages(loaded.messages)
     hist.current.reset(loaded.items)
     itemsRef.current = loaded.items
@@ -200,15 +229,38 @@ function CanvasInner({ id }: { id: string }) {
   useEffect(() => { if (view !== 'split') setSpaceHeld(false) }, [view])
 
   /* ---------- Agent 事件 ---------- */
+  const applyAgentTitle = useCallback((title?: string) => {
+    if (!title || manualTitleRef.current || autoTitledRef.current) return
+    autoTitledRef.current = true
+    setProject((prev) => {
+      if (!prev || prev.name !== '未命名项目') return prev
+      void ds.renameProject(prev.id, title)
+      return { ...prev, name: title }
+    })
+  }, [ds])
+
   const onEvent = useCallback((e: AgentEvent) => {
-    if (e.type === 'message') setMessages((messages) => messages.some(message => message.id === e.message.id) ? messages.map(message => message.id === e.message.id ? e.message : message) : [...messages, e.message])
-    else if (e.type === 'message-update') setMessages((m) => m.map((x) => (x.id === e.id && x.role === 'assistant' ? { ...x, ...e.patch } : x)))
+    if (e.type === 'message') {
+      if (e.message.role === 'assistant' || e.message.role === 'ask') applyAgentTitle(e.message.title)
+      setMessages((messages) => messages.some(message => message.id === e.message.id) ? messages.map(message => message.id === e.message.id ? e.message : message) : [...messages, e.message])
+    }
+    else if (e.type === 'message-update') {
+      applyAgentTitle(e.patch.title)
+      setMessages((m) => m.map((x) => (x.id === e.id && x.role === 'assistant' ? { ...x, ...e.patch } : x)))
+    }
     else if (e.type === 'item-add') {
       // Replay/upsert preserves saved layout while refreshing authoritative media/status.
       if (itemsRef.current.some(item => item.id === e.item.id)) {
         const replay = (item: CanvasItem) => item.id === e.item.id ? mergeGenerationItem(item, { ...e.item, x: item.x, y: item.y, w: item.w, locked: item.locked }) : item
         receiveItems(items => items.map(replay))
         return
+      }
+      let switchedToSplit = false
+      if (autoExpandRef.current && viewRef.current === 'chat' && e.item.status === 'running') {
+        switchedToSplit = true
+        setView('split')
+        setChatCollapsed(false)
+        setRefCollapsed(false)
       }
       // Data sources reserve positions before sending a placeholder. Rendering
       // and completion must never arrange the same output a second time.
@@ -218,13 +270,13 @@ function CanvasInner({ id }: { id: string }) {
       focusTimer.current = setTimeout(() => {
         const ids = batch.current?.ids ?? []
         if (ids.length) rf.fitView({ nodes: ids.map((id) => ({ id })), padding: canvasFitPad(drawerRef.current), duration: 400, maxZoom: 1 })
-      }, 120)
+      }, switchedToSplit ? 360 : 120)
     }
     else if (e.type === 'item-update') {
       receiveItems(items => items.map(item => item.id === e.id ? mergeGenerationItem(item, e.patch) : item))
     }
     else if (e.type === 'error') toast(e.message)
-  }, [receiveItems, toast, rf])
+  }, [receiveItems, toast, rf, applyAgentTitle, setView])
 
   useEffect(() => {
     if (!project || project.id !== id || !ds.watchToolRuns) return
@@ -258,6 +310,7 @@ function CanvasInner({ id }: { id: string }) {
 
   const send = async (text: string, mode: AgentMode, atts = attachments, submission?: ComposerSubmission) => {
     if (!project || busy || agentActive) return
+    setFocusedMessageId(null)
     setBusy(true); setChatSending(true); batch.current = null
     const signal = chatAbort.current?.signal
     try {
@@ -435,7 +488,8 @@ function CanvasInner({ id }: { id: string }) {
   }
 
   /** 点消息内图片：切到分栏并在画布上选中、居中这张图 */
-  const focusResult = useCallback((genId: string) => {
+  const focusResult = useCallback((genId: string, messageId?: string) => {
+    if (messageId) setFocusedMessageId(messageId)
     setView('split')
     setChatCollapsed(false)
     const it = itemsRef.current.find(
@@ -516,6 +570,41 @@ function CanvasInner({ id }: { id: string }) {
     }, 320)
   }, [rf, selected])
 
+  const activeReferences = useMemo(() => extractActiveReferences(messages, focusedMessageId), [messages, focusedMessageId])
+  const hasRefs = activeReferences.length > 0
+
+  const handleCollapseRefChange = useCallback((nextCollapsed: boolean) => {
+    setRefCollapsed(nextCollapsed)
+    setTimeout(() => {
+      const selNodes = selected.map((sid) => ({ id: sid }))
+      if (selNodes.length === 1) {
+        rf.fitView({ nodes: selNodes, padding: canvasFitPad(drawerRef.current), duration: 280, maxZoom: 1.75 })
+      } else {
+        rf.fitView({ padding: canvasFitPad(drawerRef.current), duration: 280, maxZoom: 1 })
+      }
+    }, 320)
+  }, [rf, selected])
+
+  const handleSelectReference = useCallback((attachment: ChatAttachment, index: number) => {
+    const match = findCanvasItemForReference(attachment, itemsRef.current)
+    if (match) {
+      setSelected([match.id])
+      requestAnimationFrame(() => {
+        rf.fitView({ nodes: [{ id: match.id }], padding: canvasFitPad(drawerRef.current), duration: 340, maxZoom: 1.75 })
+      })
+      return
+    }
+    const lbItems: LightboxItem[] = activeReferences.map((att) => ({
+      id: att.id,
+      image: att.image,
+      title: att.label,
+      prompt: '当前消息引用的参考图',
+      ratio: `${att.image.width}:${att.image.height}`,
+      projectId: project?.id,
+    }))
+    setPreviewState({ items: lbItems, index })
+  }, [rf, activeReferences, project?.id])
+
   const handleAnswerAsk = useCallback(async (ask: AskMessage, selectedKey: string, answerText: string) => {
     setMessages((prev) => prev.map((m) => (m.id === ask.id && m.role === 'ask' ? { ...m, answered: { selectedKey, answerText } } : m)))
     await send(`Q：${ask.question} A：${answerText}`, 'agent')
@@ -594,6 +683,8 @@ function CanvasInner({ id }: { id: string }) {
         'cv-root mode-' +
         view +
         (isSplit && chatCollapsed ? ' chat-collapsed' : '') +
+        (isSplit && hasRefs ? ' has-refs' : '') +
+        (isSplit && hasRefs && refCollapsed ? ' ref-collapsed' : '') +
         (effectiveTool === 'hand' ? ' hand' : '')
       }
     >
@@ -611,7 +702,12 @@ function CanvasInner({ id }: { id: string }) {
         stopping={stopping}
         drawerOpen={drawer && !drawerClosing}
         onToggleDrawer={toggleDrawer}
-        onRename={async (name) => { await ds.renameProject(project.id, name); setProject({ ...project, name }) }}
+        onRename={async (name) => {
+          manualTitleRef.current = true
+          try { localStorage.setItem(MANUAL_TITLE_KEY(project.id), '1') } catch {}
+          await ds.renameProject(project.id, name)
+          setProject((prev) => prev ? { ...prev, name } : prev)
+        }}
         onNewProject={async () => { const p = await ds.createProject({}); router.push(`/v2/canvas/${p.id}?view=chat`) }}
         onFocusResult={focusResult}
         view={view}
@@ -619,10 +715,23 @@ function CanvasInner({ id }: { id: string }) {
         onCollapseChange={handleCollapseChange}
         onViewChange={setView}
         onExpandCanvas={expandCanvas}
+        autoExpandCanvas={autoExpandCanvas}
+        onAutoExpandCanvasChange={handleAutoExpandChange}
         selectedGenIds={selectedGenIds}
         credits={account?.credits}
         avatar={account?.avatar}
       />
+
+      {hasRefs && (
+        <ReferencePanel
+          references={activeReferences}
+          items={items}
+          selectedIds={selected}
+          hidden={!isSplit || refCollapsed}
+          onCollapse={() => handleCollapseRefChange(true)}
+          onSelectReference={handleSelectReference}
+        />
+      )}
 
       <div className="cv-stage" aria-hidden={!isSplit || undefined}>
         {isSplit && <GenerationVariantPicker />}
@@ -651,29 +760,47 @@ function CanvasInner({ id }: { id: string }) {
           autoTool={autoTool}
         />
 
-        {isSplit && chatCollapsed && (
-          <div className="cv-collapsed-bar">
-            <Link href="/v2" className="lg" title="回到首页" aria-label="回到首页">品</Link>
-            <span className="pj-title" title={project.name}>{project.name}</span>
-            <span className="dv" />
-            <button
-              className="expand-chat-btn"
-              onClick={() => handleCollapseChange(false)}
-              title="展开对话栏"
-              aria-label="展开对话栏"
-              data-testid="expand-chat-btn"
-            >
-              <Icon name="sidebar-open" size={15} />
-              <span>展开对话栏</span>
-            </button>
-            <button
-              className="ibtn"
-              onClick={() => setView('chat')}
-              title="放大成全屏对话"
-              aria-label="放大成全屏对话"
-            >
-              <Icon name="expand" size={14} />
-            </button>
+        {isSplit && (chatCollapsed || (hasRefs && refCollapsed)) && (
+          <div className="cv-stage-tl">
+            {chatCollapsed && (
+              <div className="cv-collapsed-bar">
+                <Link href="/v2" className="lg" title="回到首页" aria-label="回到首页">品</Link>
+                <span key={project.name} className="pj-title pj-txt-in" title={project.name}>{project.name}</span>
+                <span className="dv" />
+                <button
+                  className="expand-chat-btn"
+                  onClick={() => handleCollapseChange(false)}
+                  title="展开对话栏"
+                  aria-label="展开对话栏"
+                  data-testid="expand-chat-btn"
+                >
+                  <Icon name="sidebar-open" size={15} />
+                  <span>展开对话栏</span>
+                </button>
+                <button
+                  className="ibtn"
+                  onClick={() => setView('chat')}
+                  title="放大成全屏对话"
+                  aria-label="放大成全屏对话"
+                >
+                  <Icon name="expand" size={14} />
+                </button>
+              </div>
+            )}
+            {hasRefs && refCollapsed && (
+              <button
+                type="button"
+                className="ref-expand-pill"
+                onClick={() => handleCollapseRefChange(false)}
+                title="展开参考面板"
+                aria-label="展开参考面板"
+                data-testid="expand-ref-btn"
+              >
+                <Icon name="layers" size={14} />
+                <span>参考</span>
+                <b className="cnt tnum">{activeReferences.length}</b>
+              </button>
+            )}
           </div>
         )}
 
@@ -716,7 +843,19 @@ function CanvasInner({ id }: { id: string }) {
           index={previewState.index}
           onIndexChange={(idx) => setPreviewState((s) => (s ? { ...s, index: idx } : null))}
           onClose={() => setPreviewState(null)}
-          onDownload={(it) => download([it.id])}
+          onDownload={(it) => {
+            if (itemsRef.current.some((x) => x.id === it.id)) {
+              download([it.id])
+              return
+            }
+            const a = document.createElement('a')
+            a.href = it.image.url
+            a.download = `图片-${it.image.id}.png`
+            a.target = '_blank'
+            a.rel = 'noopener'
+            a.click()
+            toast('已发起下载')
+          }}
           onToggleFavorite={async (it) => {
             if (!it.generationId) { toast('仅生成的作品支持收藏'); return }
             const next = !favMap[it.generationId]
@@ -729,19 +868,26 @@ function CanvasInner({ id }: { id: string }) {
             }
           }}
           onUseAsReference={(it) => {
-            addToChat([it.id])
+            if (itemsRef.current.some((x) => x.id === it.id)) {
+              addToChat([it.id])
+            } else {
+              const matchedRef = activeReferences.find((a) => a.image.id === it.image.id || a.id === it.id)
+              addAtts([matchedRef ?? { kind: 'material', id: it.id, label: it.title ?? '参考图', image: it.image }])
+              toast('已添加到对话')
+            }
             setPreviewState(null)
           }}
           onRegenerate={(it) => {
             setPreviewState(null)
+            const onCanvas = itemsRef.current.some((x) => x.id === it.id)
             const def = tools?.find((t) => t.id === 'swap-bg')
-            if (def) {
+            if (def && onCanvas) {
               setView('split')
               setSelected([it.id])
               setAutoTool({ toolId: def.id, itemId: it.id, previewOnly: true })
               toast('已带入参数，确认后可再生成')
             } else {
-              void send('按当前风格再生成一组变体', 'agent', [{ kind: 'canvas', id: it.id, label: '参考图', image: it.image }])
+              void send('按当前风格再生成一组变体', 'agent', [{ kind: onCanvas ? 'canvas' : 'material', id: it.id, label: it.title ?? '参考图', image: it.image }])
             }
           }}
         />

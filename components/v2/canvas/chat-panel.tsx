@@ -1,12 +1,12 @@
 'use client'
 import Link from 'next/link'
 import React, { useEffect, useRef, useState, type CSSProperties } from 'react'
-import type { AgentMode, AskMessage, ChatAttachment, ChatMessage, ImageRef, Project } from '@/lib/v2/types'
+import type { AgentMode, AskMessage, AssistantMessage, ChatAttachment, ChatMessage, ImageRef, Project } from '@/lib/v2/types'
 import { Composer, type ComposerSubmission } from '../composer'
 import { Icon } from '../icons'
 import { useDismiss, useToast } from '../ui'
 import { AskCard } from './ask-card'
-import { GenerationStep } from './generation-state'
+import { GenerationArtwork, GenerationStep, useChatResultOutput } from './generation-state'
 
 export type SessionView = 'chat' | 'split'
 
@@ -26,18 +26,115 @@ export interface ChatPanelProps {
   onToggleDrawer: () => void
   onRename: (name: string) => void
   onNewProject: () => void
-  onFocusResult: (generationId: string) => void
+  onFocusResult: (generationId: string, messageId?: string) => void
   view: SessionView
   collapsed: boolean
   onCollapseChange: (collapsed: boolean) => void
   onViewChange: (view: SessionView) => void
   onExpandCanvas: () => void
+  autoExpandCanvas?: boolean
+  onAutoExpandCanvasChange?: (next: boolean) => void
   selectedGenIds?: string[]
   credits?: number
   avatar?: string
 }
 
 const STEP_ICON = { think: 'info', image: 'img', doc: 'doc', tool: 'wand' } as const
+
+function parseRatioText(ratio?: string): { width: number; height: number } | undefined {
+  if (!ratio) return undefined
+  const m = ratio.match(/(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/)
+  if (!m) return undefined
+  const w = Number(m[1]), h = Number(m[2])
+  return w > 0 && h > 0 ? { width: w, height: h } : undefined
+}
+
+function ChatResultCard({
+  result,
+  index,
+  spec,
+  selected,
+  isChatView,
+  onFocus,
+}: {
+  result: AssistantMessage['results'][number]
+  index: number
+  spec?: string
+  selected: boolean
+  isChatView: boolean
+  onFocus: () => void
+}) {
+  const { output, variant } = useChatResultOutput(result.id, result.itemId)
+  const size = output?.item.targetSize ?? result.targetSize ?? parseRatioText(result.ratio) ?? result.image ?? parseRatioText(spec) ?? { width: 3, height: 4 }
+  const arW = Math.max(1, size.width)
+  const arH = Math.max(1, size.height)
+  const isWide = arW / arH >= 1.2
+  const style = { '--i': index, aspectRatio: `${arW} / ${arH}` } as CSSProperties
+
+  if (result.image?.url && result.status === 'done') {
+    return (
+      <div
+        className={'rs-card' + (isWide ? ' wide' : '') + (selected ? ' sel' : '')}
+        style={style}
+        onClick={onFocus}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onFocus() } }}
+        title={isChatView ? '点击展开画布并定位此图' : '在画布中定位'}
+      >
+        <img src={result.image.thumbUrl ?? result.image.url} alt="" draggable={false} />
+        <span className="rs-ov">
+          <Icon name="canvas" size={11} />
+          {isChatView ? '展开画布' : '定位画布'}
+        </span>
+      </div>
+    )
+  }
+
+  if (result.status === 'failed') {
+    return (
+      <button
+        type="button"
+        className={'rs-skel rs-failed-card node failed' + (isWide ? ' wide' : '')}
+        style={style}
+        onClick={onFocus}
+        title="点击在画布中查看或重试"
+      >
+        <Icon name="alert" size={15} />
+        <span>未完成</span>
+        <span className="gen-unbilled">未扣费</span>
+      </button>
+    )
+  }
+
+  const phase = output?.item.generationPhase ?? result.generationPhase ?? 'queued'
+  const pct = output ? output.display.percent : (phase === 'queued' ? undefined : (result.progress ?? 0))
+  const pctLabel = phase === 'processing' ? '99%' : pct !== undefined ? `${pct}%` : '0%'
+  const stageLabel =
+    phase === 'queued'
+      ? '排队中'
+      : phase === 'processing'
+        ? '载入中'
+        : phase === 'unconfirmed'
+          ? '确认中'
+          : '生成中'
+
+  return (
+    <div
+      className={'rs-skel node gen' + (isWide ? ' wide' : '') + ` phase-${phase}`}
+      style={style}
+      role="status"
+      aria-label={`第 ${index + 1} 张 ${stageLabel} ${pctLabel}`}
+    >
+      <GenerationArtwork variant={variant} />
+      <span className="gen-pill tnum"><i aria-hidden />{pctLabel}</span>
+      <span className="gen-stage-pill">{stageLabel}</span>
+      <div className="generation-caption">
+        {pct !== undefined && <progress value={pct} max={100} />}
+      </div>
+    </div>
+  )
+}
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false)
@@ -176,7 +273,7 @@ export function ChatPanel(p: ChatPanelProps) {
       <div className="fh" ref={menuRef}>
         <Link href="/v2" className="lg" title="回到首页" aria-label="回到首页">品</Link>
         <button className="pj" onClick={() => setMenuOpen((o) => !o)} title={p.project.name}>
-          <span className="pj-txt">{p.project.name}</span>
+          <span key={p.project.name} className="pj-txt pj-txt-in">{p.project.name}</span>
           <span className="pj-caret">▾</span>
         </button>
         <div className="ib">
@@ -190,6 +287,20 @@ export function ChatPanel(p: ChatPanelProps) {
                 className="fh-av"
                 style={p.avatar ? { backgroundImage: `url(${p.avatar})` } : undefined}
               />
+              {p.onAutoExpandCanvasChange && (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={Boolean(p.autoExpandCanvas)}
+                  className={'fh-auto-sw' + (p.autoExpandCanvas ? ' on' : '')}
+                  onClick={() => p.onAutoExpandCanvasChange?.(!p.autoExpandCanvas)}
+                  title="开启后，确认开始出图时自动切成「对话 · 参考 · 画布」；关闭时保持纯对话，点图再展开"
+                  data-testid="auto-expand-switch"
+                >
+                  <span className="sw-track" aria-hidden><i /></span>
+                  <span>出图自动展画布</span>
+                </button>
+              )}
               <button className="ibtn" title="新建项目" aria-label="新建项目" onClick={p.onNewProject}>
                 <Icon name="plus" size={16} />
               </button>
@@ -244,6 +355,19 @@ export function ChatPanel(p: ChatPanelProps) {
             <Link className="mi" href="/v2/projects"><Icon name="canvas" />所有项目</Link>
             <button className="mi" onClick={() => { setMenuOpen(false); p.onNewProject() }}><Icon name="plus" />新建项目</button>
             <button className="mi" onClick={() => { setMenuOpen(false); const n = window.prompt('项目名称', p.project.name); if (n?.trim()) p.onRename(n.trim()) }}><Icon name="doc" />重命名</button>
+            {p.onAutoExpandCanvasChange && (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={Boolean(p.autoExpandCanvas)}
+                className="mi"
+                onClick={() => p.onAutoExpandCanvasChange?.(!p.autoExpandCanvas)}
+              >
+                <Icon name="canvas" />
+                出图自动展画布
+                <small>{p.autoExpandCanvas ? '已开启' : '已关闭'}</small>
+              </button>
+            )}
             <div className="sep" />
             <Link className="mi" href="/v2"><Icon name="home" />回到首页</Link>
             <Link className="mi" href="/v2/assets"><Icon name="asset" />资产<small>商品 · 模特 · 品牌</small></Link>
@@ -277,14 +401,14 @@ export function ChatPanel(p: ChatPanelProps) {
                     <div className="at">
                       {m.attachments.filter(a => a.kind !== 'canvas' || !m.text.includes('@' + a.label)).map((a) => (
                         <button type="button" className="message-ref" key={`${a.kind}:${a.id}`} aria-label={`引用 ${a.label}`} title={a.label}
-                          onClick={() => p.onFocusResult(a.kind === 'canvas' ? a.id : a.image.id)}>
+                          onClick={() => p.onFocusResult(a.kind === 'canvas' ? a.id : a.image.id, m.id)}>
                           <img src={a.image.thumbUrl ?? a.image.url} alt="" />
                           <span>{a.label}</span>
                         </button>
                       ))}
                     </div>
                   )}
-                  {renderRefs(m.text, m.attachments, p.onFocusResult)}
+                  {renderRefs(m.text, m.attachments, (id) => p.onFocusResult(id, m.id))}
                 </div>
               )
             }
@@ -333,26 +457,17 @@ export function ChatPanel(p: ChatPanelProps) {
                 })}
                 {m.results.length > 0 && (
                   <div className="rs">
-                    {m.results.map((r, idx) => r.image?.url && r.status === 'done'
-                      ? (
-                        <div
-                          key={r.id}
-                          className={'rs-card' + (p.selectedGenIds?.includes(r.id) ? ' sel' : '')}
-                          style={{ '--i': idx } as CSSProperties}
-                          onClick={() => p.onFocusResult(r.id)}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); p.onFocusResult(r.id) } }}
-                          title={isChatView ? '点击展开画布并定位此图' : '在画布中定位'}
-                        >
-                          <img src={r.image.thumbUrl ?? r.image.url} alt="" draggable={false} />
-                          <span className="rs-ov">
-                            <Icon name="canvas" size={11} />
-                            {isChatView ? '展开画布' : '定位画布'}
-                          </span>
-                        </div>
-                      )
-                      : r.status === 'failed' ? <span key={r.id} className="rs-failed">未完成</span> : <b key={r.id} style={{ '--i': idx } as CSSProperties} className="rs-skel shimmer" />)}
+                    {m.results.map((r, idx) => (
+                      <ChatResultCard
+                        key={r.id}
+                        result={r}
+                        index={idx}
+                        spec={m.meta?.spec}
+                        selected={Boolean(p.selectedGenIds?.includes(r.id))}
+                        isChatView={isChatView}
+                        onFocus={() => p.onFocusResult(r.id, m.id)}
+                      />
+                    ))}
                   </div>
                 )}
                 {m.meta?.spec && <div className="ab-spec tnum">{m.meta.spec}</div>}

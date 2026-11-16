@@ -341,6 +341,41 @@ export const TOOLS: ToolDef[] = [
   { id: 'white-bg', name: '白底图', surfaces: ['home', 'slash'], icon: 'cover', backendToolId: 707 },
 ]
 
+/** Agent 首轮回复时按规则生成简短项目标题（纯前端 mock 模拟） */
+export function summarizeProjectTitle(text: string, attachments: ChatAttachment[], mode: AgentMode): string {
+  const cleanLabel = (label: string) => label.replace(/[（(]占位[)）]/g, '').trim()
+  const productAtt = attachments.find(a => a.kind === 'product')
+  const primaryAtt = productAtt ?? attachments[0]
+  const subject = primaryAtt ? cleanLabel(primaryAtt.label) : ''
+
+  const cleanedText = text
+    .replace(/^Q：[^A]*A：/, '')
+    .replace(/^\/[^\s]+\s*/, '')
+    .replace(/[，。！？、；：.!?;:]+/g, ' ')
+    .trim()
+
+  const tagMatches = cleanedText.match(/(草原|海边|街拍|棚拍|影棚|书房|法式|复古|极简|白底|秋日|夏日|冬日|春日|外景|室内|度假|通勤|详情页|套图|主图|海报|试穿|换背景|扩图|特写|胶片)/g) ?? []
+  const tags = [...new Set(tagMatches)].slice(0, 2)
+  const fallbackTag = mode === 'ecom-set' ? '电商套图' : tags.length ? tags.join('') : '视觉出图'
+
+  if (subject) {
+    const shortSub = subject.slice(0, 10)
+    const suffix = tags.length ? tags.join('') : (mode === 'ecom-set' ? '详情套图' : '主图')
+    const combined = `${shortSub} · ${suffix}`
+    return combined.length <= 18 ? combined : `${shortSub.slice(0, 8)} · ${suffix.slice(0, 6)}`
+  }
+
+  const core = cleanedText
+    .replace(/^(请|帮我|帮忙|麻烦)?(给|为|把)?(这套|这件|这个|这张|上面|当前)?(生成|做一套|出一套|出|做|拍)?(\d+\s*[张屏组套])?/, '')
+    .replace(/(不确定|歧义|帮我选).*$/, '')
+    .trim()
+  if (core) {
+    const trimmed = core.replace(/\s+/g, '').slice(0, 14)
+    if (trimmed.length >= 2) return trimmed
+  }
+  return fallbackTag === '视觉出图' ? 'AI 视觉创作' : `${fallbackTag}创作`
+}
+
 /** 按字段算张数：count 字段为多选取选中数，否则取数值 */
 export function toolCount(def: ToolDef | undefined, params: Record<string, unknown> | undefined, fallback: number) {
   const f = def?.fields?.find((x) => x.count)
@@ -580,18 +615,31 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
     downloadGenerations: ids => downloadGenerationArchive(ids, getHistory),
 
     async sendMessage(projectId, input, onEvent) {
+      hydrate()
+      const existingReplies = (messagesByProject[projectId] ?? []).filter(m => m.role === 'assistant' || m.role === 'ask')
+      const firstRoundTitle = existingReplies.length === 0 ? summarizeProjectTitle(input.text, input.attachments, input.mode) : undefined
       const user: ChatMessage = { id: uid('u'), role: 'user', text: input.text, attachments: input.attachments, createdAt: nowIso() }
       messagesByProject[projectId] = [...(messagesByProject[projectId] ?? []), user]
       onEvent({ type: 'message', message: user })
-      hydrate()
+
+      const applyAutoTitle = (title?: string) => {
+        if (!title) return
+        const p = projects.find(x => x.id === projectId)
+        if (p && p.name === '未命名项目') {
+          p.name = title
+          if (!stressEnabled()) persist()
+        }
+      }
 
       const isAskReply = input.text.startsWith('Q：')
       const needsClarification = !isAskReply && /(歧义|帮我选|不确定)/.test(input.text)
       if (needsClarification) {
         await pause(400)
+        applyAutoTitle(firstRoundTitle)
         const ask: AskMessage = {
           id: uid('ask'),
           role: 'ask',
+          ...(firstRoundTitle ? { title: firstRoundTitle } : {}),
           createdAt: nowIso(),
           reason: '你的描述里还没有确定画面风格与光线方向，先确认一个方向可以避免返工：',
           question: '这组图片希望采用哪种视觉基调？',
@@ -627,12 +675,20 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
       onEvent({ type: 'message', message: structuredClone(thinkMsg) })
 
       await pause(280)
+      if (firstRoundTitle) {
+        thinkMsg.title = firstRoundTitle
+        applyAutoTitle(firstRoundTitle)
+      }
       thinkMsg.steps = [
         { label: '画布读取完成', icon: 'doc', status: 'done' },
         { label: '思考完成', icon: 'think', status: 'running' },
       ]
       messagesByProject[projectId] = (messagesByProject[projectId] ?? []).map(m => m.id === thinkMsg.id ? structuredClone(thinkMsg) : m)
-      onEvent({ type: 'message-update', id: thinkMsg.id, patch: { steps: structuredClone(thinkMsg.steps) } })
+      onEvent({
+        type: 'message-update',
+        id: thinkMsg.id,
+        patch: { steps: structuredClone(thinkMsg.steps), ...(firstRoundTitle ? { title: firstRoundTitle } : {}) },
+      })
 
       await pause(320)
       thinkMsg.steps = [
@@ -760,7 +816,15 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
   }
 
   function publish(run: { projectId: string; items: CanvasItem[]; message: AssistantMessage; specText?: string }, onEvent: (event: AgentEvent) => void) {
-    run.message.results = run.items.map(item => ({ id: item.ref.id, status: item.status ?? 'running', ...(item.status === 'done' ? { image: item.image } : {}) }))
+    run.message.results = run.items.map(item => ({
+      id: item.ref.id,
+      itemId: item.id,
+      status: item.status ?? 'running',
+      ...(item.progress !== undefined ? { progress: item.progress } : {}),
+      ...(item.generationPhase ? { generationPhase: item.generationPhase } : {}),
+      ...(item.targetSize ? { targetSize: item.targetSize } : {}),
+      ...(item.status === 'done' ? { image: item.image } : {}),
+    }))
     const done = run.items.filter(item => item.status === 'done').length
     const failed = run.items.filter(item => item.status === 'failed').length
     const running = run.items.filter(item => item.status === 'running').length

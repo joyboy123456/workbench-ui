@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'next/navigation'
 import type { CanvasItem } from '@/lib/v2/types'
 import { generationDisplay, type GenerationDisplay } from '@/lib/v2/generation-progress'
@@ -32,6 +32,18 @@ export function GenerationStateProvider({ items, children }: { items: CanvasItem
 export function useGenerationState(item: CanvasItem) {
   const { outputs, variant } = useContext(Context)
   return { display: outputs.get(item.id)?.display ?? generationDisplay(item, Date.now()), variant }
+}
+
+export function useChatResultOutput(resultId: string, itemId?: string): { output?: OutputState; variant: Variant } {
+  const { outputs, variant } = useContext(Context)
+  if (itemId) {
+    const byItem = outputs.get(itemId)
+    if (byItem) return { output: byItem, variant }
+  }
+  for (const entry of outputs.values()) {
+    if (entry.item.ref.id === resultId) return { output: entry, variant }
+  }
+  return { output: undefined, variant }
 }
 
 export function GenerationStep({ itemId, label }: { itemId: string; label: string }) {

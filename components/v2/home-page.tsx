@@ -99,8 +99,7 @@ export function HomePage() {
 
   const startProject = async (text: string, mode: AgentMode, attachments = atts, submission?: ComposerSubmission) => {
     const productIds = attachments.filter((a) => a.kind === 'product').map((a) => a.id)
-    const cleanTitle = text.replace(/^\/[^\s]+\s*/, '').trim().slice(0, 16) || text.trim().slice(0, 16) || undefined
-    const p = await ds.createProject({ name: cleanTitle, productIds })
+    const p = await ds.createProject({ productIds })
     sessionStorage.setItem(PENDING_KEY(p.id), JSON.stringify({ text, mode, attachments, submission }))
     router.push(`/v2/canvas/${p.id}?view=${view}`)
   }
@@ -131,7 +130,7 @@ export function HomePage() {
             hero
             attachments={atts}
             onAttachmentsChange={setAtts}
-            onSend={(t, m, submission) => start(t, m, atts, submission)}
+            onSend={(t, m, submission) => startProject(t, m, atts, submission)}
             placeholder={entry === 'canvas' ? '描述你想要的画面，生成结果会放进自由画布' : '上传商品图或用 @ 引用资产，描述你想要的画面'}
             autoFocus
           />
