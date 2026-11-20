@@ -6,6 +6,7 @@ import { useLoad, useV2 } from '@/lib/v2/data-source'
 import { TOOL_CATEGORIES } from '@/lib/v2/mock'
 import type { CaseExample, ChatAttachment, ToolCatalogItem, ToolCategoryId, ToolCover } from '@/lib/v2/types'
 import { CaseGallery } from './case-gallery'
+import { ToolLaunchModal } from './tool-launch-modal'
 import { PENDING_KEY } from '@/lib/v2/pending-message'
 import { Icon } from './icons'
 import { Shell } from './shell'
@@ -27,7 +28,7 @@ export function ToolsPage() {
   const [tab, setTab] = useState<Tab>((sp?.get('cat') as Tab) || 'all')
   const [q, setQ] = useState('')
   const [toolId, setToolId] = useState(sp?.get('tool')?.trim() ?? '')
-  const { start, busy } = useStartTool()
+  const [activeTool, setActiveTool] = useState<ToolCatalogItem | null>(null)
   const [casesOf, setCasesOf] = useState<ToolCatalogItem | null>(null)
   const makeSame = useMakeSameCase()
 
@@ -92,7 +93,7 @@ export function ToolsPage() {
                 <div className="tl-grid">
                   {s.items.map((t, i) => (
                     <div key={s.id + t.id} className="tl-item">
-                      <ToolCard t={t} i={i} busy={busy === t.id} onOpen={() => start(t)} />
+                      <ToolCard t={t} i={i} busy={false} onOpen={() => setActiveTool(t)} />
                       {!!t.caseCount && (
                         <button type="button" className="tl-cases" onClick={() => setCasesOf(t)}>
                           <Icon name="img" size={11} />{t.caseCount} 个案例
@@ -106,6 +107,7 @@ export function ToolsPage() {
           ))
         )}
       </div>
+      {activeTool && <ToolLaunchModal tool={activeTool} onClose={() => setActiveTool(null)} />}
       {casesOf && <ToolCasesDrawer tool={casesOf} onClose={() => setCasesOf(null)} onMakeSame={(c) => { setCasesOf(null); void makeSame(c) }} />}
 
     </Shell>
