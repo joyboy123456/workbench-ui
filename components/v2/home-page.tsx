@@ -178,11 +178,12 @@ export function HomePage() {
   ) =>
     requireAuth(() => startProject(text, mode, attachments, submission, extra))
   const startCase = (c: CaseExample) => {
+    const mode = c.video ? 'video' : 'agent'
     if (atts.length > 0) {
-      void start(c.keyword, 'agent', atts, undefined, { caseId: c.id, projectName: c.title })
+      void start(c.keyword, mode, composerAttachments(mode, atts), undefined, { caseId: c.id, projectName: c.title })
       return
     }
-    void start(c.keyword, 'agent', [], undefined, {
+    void start(c.keyword, mode, [], undefined, {
       caseId: c.id,
       prefillOnly: true,
       inputHint: c.inputHint,

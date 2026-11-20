@@ -1,7 +1,7 @@
 'use client'
 /**
  * 案例库（CASES2）：分类 tab + 工具筛选 + 按真实宽高的瀑布流 + 懒加载缩略图 + 滚动加载 + 案例详情。
- * 数据只走 useV2().listCasePage；卡片只加载缩略图，原图（详情大图）仅在详情打开时加载。
+ * 数据只走 useV2().listCasePage，卡片仅加载缩略图，详情支持大图和视频。
  */
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -267,6 +267,7 @@ function CaseCard({ c, i, onOpen, onMakeSame }: { c: CaseExample; i: number; onO
             <span className="cs-broken"><Icon name="img" size={18} /></span>
           )}
           <span className="cs-shade" aria-hidden />
+          {c.video && <span className="cs-video-badge"><Icon name="play" size={14} />{c.video.duration} 秒</span>}
           <span className="cs-meta">
             <b>{c.title}</b>
             {c.toolName && <small>{c.toolName}</small>}
@@ -297,6 +298,7 @@ export function CaseDetail({ cases, index, onIndexChange, onClose, onMakeSame }:
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
+      else if (e.target instanceof HTMLMediaElement) return
       else if (e.key === 'ArrowRight' && index < cases.length - 1) onIndexChange(index + 1)
       else if (e.key === 'ArrowLeft' && index > 0) onIndexChange(index - 1)
     }
@@ -315,8 +317,13 @@ export function CaseDetail({ cases, index, onIndexChange, onClose, onMakeSame }:
     <div className="cs-dlg-bg" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="cs-dlg" role="dialog" aria-modal="true" aria-label={c.title} tabIndex={-1} ref={panelRef}>
         <div className="cs-dlg-stage">
-          {loaded !== c.id && <span className="cs-dlg-load"><span className="cs-spin" aria-hidden /></span>}
-          <img key={c.id} src={c.image.url} alt={c.title} className={loaded === c.id ? 'ok' : ''} onLoad={() => setLoaded(c.id)} style={{ backgroundImage: c.image.thumbUrl ? `url(${c.image.thumbUrl})` : undefined }} />
+          {c.video ? (
+            <video key={c.id} src={c.video.url} poster={c.image.url} controls playsInline preload="none"
+              width={c.image.width} height={c.image.height} aria-label={c.title} />
+          ) : <>
+            {loaded !== c.id && <span className="cs-dlg-load"><span className="cs-spin" aria-hidden /></span>}
+            <img key={c.id} src={c.image.url} alt={c.title} className={loaded === c.id ? 'ok' : ''} onLoad={() => setLoaded(c.id)} style={{ backgroundImage: c.image.thumbUrl ? `url(${c.image.thumbUrl})` : undefined }} />
+          </>}
           {index > 0 && <button type="button" className="cs-nav l" onClick={() => onIndexChange(index - 1)} aria-label="上一个"><Icon name="left" size={16} /></button>}
           {index < cases.length - 1 && <button type="button" className="cs-nav r" onClick={() => onIndexChange(index + 1)} aria-label="下一个"><Icon name="right" size={16} /></button>}
         </div>

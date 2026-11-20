@@ -1,0 +1,101 @@
+[
+  {
+    "id": "office-window",
+    "title": "写字楼窗边通勤女装",
+    "width": 896,
+    "height": 1200
+  },
+  {
+    "id": "coastal-motion",
+    "title": "海边外套 · 动态样片",
+    "poster": "coastal-walk",
+    "width": 480,
+    "height": 640,
+    "duration": 5
+  },
+  {
+    "id": "cafe-window",
+    "title": "欧式咖啡馆窗边女装",
+    "width": 896,
+    "height": 1200
+  },
+  {
+    "id": "bookshop",
+    "title": "木质书架间的女装大片",
+    "width": 896,
+    "height": 1200
+  },
+  {
+    "id": "coastal-walk",
+    "title": "海边栈道外套大片",
+    "width": 896,
+    "height": 1200
+  },
+  {
+    "id": "trail-motion",
+    "title": "山野工装 · 动态样片",
+    "poster": "autumn-trail",
+    "width": 480,
+    "height": 640,
+    "duration": 5
+  },
+  {
+    "id": "garden-picnic",
+    "title": "初夏花园野餐穿搭",
+    "width": 896,
+    "height": 1200
+  },
+  {
+    "id": "city-crosswalk",
+    "title": "都市斑马线街拍穿搭",
+    "width": 896,
+    "height": 1200
+  },
+  {
+    "id": "white-alley",
+    "title": "白墙小巷夏日女装",
+    "width": 896,
+    "height": 1200
+  },
+  {
+    "id": "home-knit",
+    "title": "居家窗边针织穿搭",
+    "width": 896,
+    "height": 1200
+  },
+  {
+    "id": "hotel-lobby",
+    "title": "酒店大堂通勤男装",
+    "width": 896,
+    "height": 1200
+  },
+  {
+    "id": "autumn-trail",
+    "title": "秋日山野工装男装",
+    "width": 896,
+    "height": 1200
+  },
+  {
+    "id": "record-shop",
+    "title": "复古唱片店男装",
+    "width": 896,
+    "height": 1200
+  },
+  {
+    "id": "garage",
+    "title": "工业风车库休闲男装",
+    "width": 896,
+    "height": 1200
+  },
+  {
+    "id": "jumpsuit",
+    "title": "午夜蓝连体裤室内大片",
+    "width": 896,
+    "height": 1200,
+    "reference": {
+      "id": "jumpsuit-reference",
+      "width": 360,
+      "height": 480
+    }
+  }
+]

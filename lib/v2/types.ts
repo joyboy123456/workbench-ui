@@ -450,6 +450,8 @@ export interface CaseExample {
   title: string
   /** url = 详情大图（仅详情打开时加载）；thumbUrl = 卡片缩略图；sourceUrl = 原图，只用于做同款登记素材 */
   image: ImageRef
+  /** 视频案例以 image 作为封面，详情打开后可以播放。 */
+  video?: { url: string; duration: number }
   /** 案例分类（用于首页案例区筛选） */
   category?: CaseCategory
   /** 瀑布流展示比例提示 */

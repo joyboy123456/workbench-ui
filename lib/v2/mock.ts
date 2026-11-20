@@ -1,4 +1,5 @@
 import { POSE_OPTIONS } from './pose-options'
+import fashionCaseFixtures from './mock-fashion-cases.json'
 import { mergeChatMessage } from './chat-messages'
 import { filterGenerations, generationDetail, replayParameters } from './generation-history'
 import { mockToolGeneration, mockToolReplaySchema, type MockToolReplay } from './mock-tool-history'
@@ -359,6 +360,30 @@ export const TOOLS: ToolDef[] = [
   { id: 'white-bg', name: '白底图', surfaces: ['home', 'slash'], icon: 'cover', backendToolId: 707 },
 ]
 
+const FASHION_CASE_MEDIA = '/v2-mock/fashion/'
+const FASHION_CASES: CaseExample[] = fashionCaseFixtures.map(({ id, title, width, height, poster, duration, reference }) => {
+  const caseId = `fashion-${id}`
+  const imageId = poster ?? id
+  return {
+    id: caseId,
+    title,
+    category: 'model',
+    aspect: 'tall',
+    image: {
+      id: caseId,
+      url: `${FASHION_CASE_MEDIA}${imageId}.webp`,
+      thumbUrl: `${FASHION_CASE_MEDIA}${imageId}-thumb.webp`,
+      width,
+      height,
+    },
+    keyword: `做同款：${title}`,
+    inputHint: poster ? ['服装商品图', '首帧参考图（可选）'] : ['服装商品图'],
+    ...(poster && duration ? { video: { url: `${FASHION_CASE_MEDIA}${id}.mp4`, duration } } : {}),
+    ...(reference && { references: [{ ...reference, url: `${FASHION_CASE_MEDIA}${reference.id}.webp`, label: '服装商品参考' }] }),
+    meta: { aspectRatio: '3:4' },
+  }
+})
+
 /** mock 案例（无后端时首页案例区用） */
 function mockCases(): CaseExample[] {
   const meta: Array<{ title: string; category: CaseExample['category']; aspect: CaseExample['aspect']; inputHint: string[] }> = [
@@ -375,7 +400,7 @@ function mockCases(): CaseExample[] {
     { title: '电商大促首图视觉套版', category: 'detail', aspect: 'wide', inputHint: ['产品图'] },
     { title: '复古胶片感人像Lookbook', category: 'style', aspect: 'tall', inputHint: ['服装商品图'] },
   ]
-  return meta.map((m, k) => ({
+  return [...FASHION_CASES, ...meta.map((m, k) => ({
     id: `case${k + 1}`,
     title: m.title,
     category: m.category,
@@ -383,7 +408,7 @@ function mockCases(): CaseExample[] {
     keyword: `做同款：${m.title}`,
     inputHint: m.inputHint,
     image: { id: `case${k + 1}`, url: `/v2-mock/c${k + 1}.jpg`, width: 640, height: 857 },
-  }))
+  }))]
 }
 
 const MOCK_CASE_TOOLS: Record<NonNullable<CaseExample['category']>, { id: string; name: string }> = {
