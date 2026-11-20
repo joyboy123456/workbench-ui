@@ -9274,3 +9274,42 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.v2 .tf-input {
+  width: 100%;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--tx);
+  font-size: 13px;
+  padding: 0 11px;
+  outline: none;
+}
+.v2 .tf-input:focus {
+  border-color: var(--acc);
+}
+.v2 .tf-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--tx3);
+}
+.v2 .tf-note p {
+  margin: 0 0 10px;
+  white-space: pre-wrap;
+}
+.v2 .tf-copy-btn {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line2);
+  background: var(--panel);
+  color: var(--tx);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.v2 .tf-copy-btn:hover {
+  background: var(--hover-alpha);
+}
