@@ -2,7 +2,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useV2 } from '@/lib/v2/data-source'
 import type { V2LoginInput, V2RegisterInput, V2SessionUser } from '@/lib/v2/session'
-import { Icon } from './icons'
+import { BrandMark, Icon } from './icons'
 import { useToast } from './ui'
 
 type Action = () => void | Promise<unknown>
@@ -10,6 +10,7 @@ interface Intent { action: Action; resolve: (completed: boolean) => void }
 interface AuthState {
   user: V2SessionUser | null
   loading: boolean
+  logout: () => Promise<void>
   requireAuth: (action?: Action) => Promise<boolean>
 }
 const AuthContext = createContext<AuthState | null>(null)
@@ -24,27 +25,56 @@ export function V2AuthProvider({ children }: { children: ReactNode }) {
   const currentUser = useRef(user)
   const pending = useRef<Intent | null>(null)
   const sessionRequest = useRef<Promise<void> | null>(null)
-  const executing = useRef(false)
+  const sessionKnown = useRef(false)
+
+  const identityVersion = useRef(0)
 
   useEffect(() => {
     let alive = true
-    sessionRequest.current = ds.getSession().then(
-      value => { if (alive) { currentUser.current = value; setUser(value) } },
-      () => { /* 会话检查失败时仍可浏览公开内容；使用时再登录。 */ },
-    ).finally(() => { if (alive) setLoading(false) })
-    return () => { alive = false; pending.current?.resolve(false); pending.current = null }
+    let retry: ReturnType<typeof setTimeout> | undefined
+    let inFlight = false
+    const refresh = () => {
+      if (inFlight) return
+      inFlight = true
+      const version = identityVersion.current
+      sessionRequest.current = ds.getSession().then(
+        value => {
+          if (alive && version === identityVersion.current) { sessionKnown.current = true; currentUser.current = value; setUser(value); setLoading(false) }
+        },
+        () => {
+          // A cold backend/temporary network failure is not proof of logout.
+          if (alive) retry = setTimeout(refresh, 3000)
+        },
+      ).finally(() => { inFlight = false })
+    }
+    const visible = () => { if (document.visibilityState === 'visible') refresh() }
+    refresh()
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      alive = false; clearTimeout(retry)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', visible)
+      pending.current?.resolve(false); pending.current = null
+    }
   }, [ds])
 
+  const logout = async () => {
+    identityVersion.current++
+    await ds.logout()
+    currentUser.current = null; setUser(null); setIntent(null)
+    pending.current?.resolve(false); pending.current = null
+    toast('已退出登录')
+  }
+
   const execute = useCallback(async (action: Action) => {
-    if (executing.current) return false
-    executing.current = true
     try { await action(); return true }
     catch (error) { toast(error instanceof Error ? error.message : '操作失败，请重试'); return false }
-    finally { executing.current = false }
   }, [toast])
 
   const requireAuth = useCallback(async (action: Action = () => {}) => {
-    await sessionRequest.current
+    if (!sessionKnown.current) await sessionRequest.current
+    if (!sessionKnown.current) { toast('正在确认登录状态，请稍后再试'); return false }
     if (currentUser.current) return execute(action)
     return new Promise<boolean>(resolve => {
       pending.current?.resolve(false)
@@ -52,7 +82,7 @@ export function V2AuthProvider({ children }: { children: ReactNode }) {
       pending.current = next
       setIntent(next)
     })
-  }, [execute])
+  }, [execute, toast])
 
   const dismiss = useCallback(() => {
     pending.current?.resolve(false)
@@ -63,6 +93,7 @@ export function V2AuthProvider({ children }: { children: ReactNode }) {
   const authenticate = async (input: V2LoginInput | V2RegisterInput) => {
     const submittedIntent = pending.current
     const value = 'inviteCode' in input ? await ds.register(input) : await ds.login(input)
+    identityVersion.current++
     currentUser.current = value
     setUser(value)
     // 关闭后才返回的登录请求可以更新身份，但不能续接已取消或新开的动作。
@@ -74,7 +105,7 @@ export function V2AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, requireAuth }}>
+    <AuthContext.Provider value={{ user, loading, requireAuth, logout }}>
       {children}
       {intent && <LoginDialog onClose={dismiss} onSubmit={authenticate} />}
     </AuthContext.Provider>
@@ -144,7 +175,7 @@ function LoginDialog({ onClose, onSubmit }: {
   return (
     <dialog ref={dialog} className="auth-dialog" aria-labelledby="v2-auth-title" aria-describedby="v2-auth-description" onClose={onClose}>
       <button className="ibtn auth-close" type="button" aria-label="关闭登录弹窗" onClick={() => dialog.current?.close()}><Icon name="x" size={18} /></button>
-      <div className="auth-brand" aria-hidden="true">品</div>
+      <div className="auth-brand" aria-hidden="true"><BrandMark size={19} /></div>
       <h2 id="v2-auth-title">{register ? '注册账号' : '登录，继续创作'}</h2>
       <p id="v2-auth-description">{register ? '使用邀请码注册，完成后继续刚才的操作' : '登录后继续刚才的操作，输入内容会为你保留'}</p>
       <form onSubmit={submit}>

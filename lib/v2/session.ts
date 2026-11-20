@@ -1,4 +1,4 @@
-/** 账号身份沿用既有 Cookie 会话；mock 仅模拟业务数据，不绕过账号规则。 */
+/** 与主仓库共用的会话契约。独立前端使用本地演示身份。 */
 export interface V2SessionUser {
   id: string
   username: string
@@ -11,6 +11,7 @@ export interface V2RegisterInput extends V2LoginInput { inviteCode: string; disp
 
 export interface V2SessionSource {
   getSession(): Promise<V2SessionUser | null>
+  logout(): Promise<void>
   login(input: V2LoginInput): Promise<V2SessionUser>
   register(input: V2RegisterInput): Promise<V2SessionUser>
 }

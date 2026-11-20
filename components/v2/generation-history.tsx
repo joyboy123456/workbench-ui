@@ -1,4 +1,5 @@
 'use client'
+import { generationMetadata } from '@/lib/v2/image-metadata'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
@@ -81,7 +82,7 @@ export function HistoryTab({ search, onClearSearch }: { search: string; onClearS
     {history.error ? <div className="history-error" role="alert"><p>{history.error}</p><button className="btn" onClick={history.reload}>重新加载</button></div> : history.loading ? <div className="history-grid"><CardSkeleton count={6} ratio34 /></div> : groups.map(group => <section key={group.date} className="history-day" aria-label={group.label}>
       <div className="dg"><h3>{group.label}</h3><small>{group.records.length} 张 · {new Set(group.records.map(g => g.projectId)).size} 个项目</small></div>
       <div className="history-grid">{group.records.map(g => <article key={g.id} className={'history-card' + (selected.includes(g.id) ? ' selected' : '')}>
-        <button className="history-image" aria-label={`查看${toolName(g)}：${name(g)}`} onClick={() => setPreview(g.id)}><img src={g.image.thumbUrl ?? g.image.url} alt={`${toolName(g)}作品`} loading="lazy" /><span className="history-kind">{toolName(g)}</span></button>
+        <button className="history-image" aria-label={`查看${toolName(g)}：${name(g)}`} onClick={() => setPreview(g.id)}><img src={g.image.thumbUrl ?? g.image.url} alt={`${toolName(g)}作品`} loading="lazy" />{g.video && <span className="history-video" title={`${Math.round(g.video.duration)} 秒视频`}><Icon name="play" size={13} />{Math.round(g.video.duration)}s</span>}<span className="history-kind">{toolName(g)}</span></button>
         <div className="history-card-actions">
           <button title={selected.includes(g.id) ? '取消选择' : '选择'} aria-label={selected.includes(g.id) ? '取消选择作品' : '选择作品'} aria-pressed={selected.includes(g.id)} className={selected.includes(g.id) ? 'active' : ''} disabled={busy} onClick={() => toggle(g.id)}><Icon name="check" size={16} /></button>
           <span className="sp" />
@@ -112,17 +113,23 @@ function GenerationPreview({ id, navigation, onNavigate, projectName, toolName, 
   const router = useRouter()
   const toast = useToast()
   const detail = useLoad(d => d.getGeneration(id), [id])
-  const siblings = detail.data?.siblings ?? []
-  const sequence = siblings.length > 1 ? siblings : navigation
+  const g = detail.data?.generation.id === id ? detail.data.generation : undefined
+  const siblings = g ? detail.data?.siblings ?? [] : []
+  const candidates = siblings.length > 1 ? siblings : navigation
+  const sequence = g && !candidates.some(item => item.id === g.id) ? [g, ...candidates] : candidates.map(item => item.id === g?.id ? g : item)
+  const project = useLoad(d => d.getProject(g!.projectId), [g?.projectId], Boolean(g?.projectId))
+  const canvasItems = project.data?.project.id === g?.projectId ? project.data?.items ?? [] : []
   const index = Math.max(0, sequence.findIndex(item => item.id === id))
   const lbItems: LightboxItem[] = sequence.map(item => ({
     id: item.id,
     generationId: item.id,
     projectId: item.projectId,
+    projectName: projectName(item),
+    ...generationMetadata(item),
+    canvasItemId: canvasItems.find(node => node.ref.type === 'generation' && node.ref.id === item.id)?.id,
     image: item.image,
     title: `${toolName(item)} · ${projectName(item)}`,
     prompt: item.prompt,
-    modelName: item.modelName,
     ratio: item.ratio,
     resolution: item.resolution,
     createdAt: item.createdAt,
@@ -133,6 +140,17 @@ function GenerationPreview({ id, navigation, onNavigate, projectName, toolName, 
     <Lightbox
       items={lbItems}
       index={index}
+      loading={detail.loading || (!detail.error && !g && Boolean(detail.data))}
+      error={!detail.loading ? detail.error ?? (!g ? '记录已不可用' : undefined) : undefined}
+      onRetry={detail.reload}
+      comparison={{ items: canvasItems, onNavigate: canvasId => {
+        const target = canvasItems.find(node => node.id === canvasId)
+        if (target?.ref.type === 'generation') onNavigate(target.ref.id)
+      } }}
+      onLocate={it => {
+        onClose()
+        if (it.projectId) router.push(`/v2/canvas/${encodeURIComponent(it.projectId)}?view=split&generation=${encodeURIComponent(it.id)}`)
+      }}
       onIndexChange={(nextIdx) => {
         const target = sequence[nextIdx]
         if (target) onNavigate(target.id)
@@ -151,7 +169,7 @@ function GenerationPreview({ id, navigation, onNavigate, projectName, toolName, 
       onUseAsReference={(it) => {
         onClose()
         if (it.projectId) {
-          router.push(`/v2/canvas/${encodeURIComponent(it.projectId)}?view=split&generation=${encodeURIComponent(it.id)}`)
+          router.push(`/v2/canvas/${encodeURIComponent(it.projectId)}?view=split&generation=${encodeURIComponent(it.id)}&reference=1`)
         }
       }}
       onRegenerate={(it) => {

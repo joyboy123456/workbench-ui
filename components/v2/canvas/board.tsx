@@ -1,48 +1,66 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Background, BackgroundVariant, NodeToolbar, Position, ReactFlow, ViewportPortal, applyNodeChanges, useReactFlow,
-  SelectionMode, type Edge, type NodeChange,
+  Background, BackgroundVariant, ReactFlow, ViewportPortal, applyNodeChanges, useReactFlow,
+  SelectionMode, type NodeChange,
 } from '@xyflow/react'
 import { arrange, itemHeight, layoutSections } from '@/lib/v2/arrange'
-import { pasteCanvasItems, reorderCanvasItems, selectionTools, usableImage } from '@/lib/v2/selection-actions'
+import { canvasToolbarTools, pasteCanvasItems, reorderCanvasItems, selectionTools, unavailableCanvasTool, usableImage, type LayerOrder } from '@/lib/v2/selection-actions'
+import type { CanvasEdit } from '@/lib/v2/canvas-raster'
 import { generationToolParameters } from '@/lib/v2/generation-history'
-import { ancestorLayers, parentIds, provenanceLinks } from '@/lib/v2/provenance'
+import { ancestorLayers, parentIds } from '@/lib/v2/provenance'
 import { canvasFitPad, canvasMotionDuration } from '@/lib/v2/fit'
-import type { ArrangeMode, CanvasItem, ToolDef, ToolParams } from '@/lib/v2/types'
+import type { ArrangeMode, CanvasItem, ChatMessage, ToolDef, ToolParams } from '@/lib/v2/types'
+import type { RegenerationPlan } from '@/lib/v2/regenerate'
+import type { ToolRegenerationDraft } from '@/lib/v2/regenerate-draft'
 import { Icon } from '../icons'
 import { FloatingMenu, useToast } from '../ui'
+import { SelectionFrame } from './selection-frame'
 import { SelectionToolbar } from './selection-toolbar'
 import { nodeTypes, type ImageNodeType, type NodeOverlay } from './image-node'
 import { ToolPanel, defaultParams, filterCss, ratioOf } from './tool-panel'
 import { ArrangeOptions, CanvasNavigation, useCanvasFit } from './canvas-navigation'
+import { RegenerationActions } from './regeneration-actions'
+import { ImageDimensionsControl, SelectionSideTools, VerticalSelectionTools } from './selection-controls'
+import { BatchAction } from './batch-panel'
 
 export interface BoardProps {
   items: CanvasItem[]
   selected: string[]
   tool: 'select' | 'hand'
   active: boolean
+  focusId?: string | null
   drawerOpen?: boolean
+  canvasBg?: string | null
+  onCanvasBg?: (color: string | null) => void
   onBeginMove: () => void
   onEndMove: () => void
   tools: ToolDef[]
+  messages?: ChatMessage[]
+  toolSubmitting?: boolean
   onItems: (next: CanvasItem[], commit: boolean) => void
   onSelect: (ids: string[]) => void
-  onRunTool: (toolId: string, ids: string[], params?: ToolParams) => void
-  onRetryTool?: (runId: string) => void | Promise<void>
+  onRunTool: (toolId: string, ids: string[], params?: ToolParams, anchorId?: string) => void
+  onEditTool: (toolId: string, sourceId: string, params: ToolParams, anchorId: string, notice?: string) => void
+  onEditChat: (plan: Extract<RegenerationPlan, { kind: 'chat' }>) => void
+  onRetryTool?: (runId: string, item?: CanvasItem) => void | Promise<void>
   onAddToChat: (ids: string[]) => void
-  onDownload: (ids: string[]) => void
+  onDownload: (ids: string[], format?: 'original' | 'webp') => void
+  onImageEdit: (ids: string[], edit: CanvasEdit) => void
+  imageEditing?: boolean
+  onVideo: (id: string) => void
   onSaveMaterial: (ids: string[]) => void
   onSetCover: (id: string) => void
   onPreview: (id: string) => void
+  onCompare: (id: string) => void
   onDropAsset: (raw: string, at: { x: number; y: number }) => void
   onDropFiles: (files: File[], at: { x: number; y: number }) => void
   onUpload: () => void
   /** 工具广场入口；历史入口 previewOnly 只打开面板，确认后才提交 */
-  autoTool?: { toolId: string; itemId: string; params?: ToolParams; previewOnly?: boolean } | null
+  autoTool?: ToolRegenerationDraft | null
 }
 
-type Menu = null | { kind: 'node'; id: string; x: number; y: number } | { kind: 'pane'; x: number; y: number } | { kind: 'more' | 'options'; id: string; x: number; y: number; toolId?: string; trigger?: HTMLButtonElement }
+type Menu = null | { kind: 'node'; id: string; x: number; y: number } | { kind: 'pane'; x: number; y: number } | { kind: 'more' | 'options' | 'layers'; id: string; x: number; y: number; toolId?: string; trigger?: HTMLButtonElement }
 
 export function Board(p: BoardProps) {
   const rf = useReactFlow()
@@ -55,6 +73,7 @@ export function Board(p: BoardProps) {
   const [dragOver, setDragOver] = useState(false)
   const [panel, setPanel] = useState<string | null>(null)
   const [historyTool, setHistoryTool] = useState<ToolDef | null>(null)
+  const regenerationAnchor = useRef<string | undefined>(undefined)
   const [params, setParams] = useState<ToolParams>({})
   const [hasMask, setHasMask] = useState(false)
   const maskDataUrl = useRef<string | undefined>(undefined)
@@ -62,13 +81,10 @@ export function Board(p: BoardProps) {
   const [maskKey, setMaskKey] = useState(0)
   const [arranging, setArranging] = useState(false)
   const [isMoving, setIsMoving] = useState(false)
-  const [showConnections, setShowConnections] = useState(false)
   const [trace, setTrace] = useState<{ id: string; step: number } | null>(null)
   const sourceTrigger = useRef<HTMLElement | null>(null)
   const sourceClose = useRef<HTMLButtonElement | null>(null)
-  const connectionsToggle = useRef<HTMLButtonElement | null>(null)
   const traceId = trace?.id
-  const links = useMemo(() => provenanceLinks(p.items), [p.items])
   const layers = useMemo(() => traceId ? ancestorLayers(p.items, traceId) : [], [p.items, traceId])
   const traceStep = Math.min(trace?.step ?? 0, Math.max(0, layers.length - 1))
   const traceLayer = useMemo(() => new Set(layers[traceStep] ?? []), [layers, traceStep])
@@ -77,7 +93,7 @@ export function Board(p: BoardProps) {
   const closeSources = useCallback(() => {
     setTrace(null)
     const trigger = sourceTrigger.current
-    ;(trigger?.isConnected ? trigger : connectionsToggle.current)?.focus({ preventScroll: true })
+    ;(trigger?.isConnected ? trigger : stage.current)?.focus({ preventScroll: true })
   }, [])
   useEffect(() => { setTrace(null) }, [selectedKey])
   useEffect(() => {
@@ -97,12 +113,6 @@ export function Board(p: BoardProps) {
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     void rf.fitView({ nodes: ids.map(id => ({ id })), padding: panePad, duration: reduced ? 0 : 300, maxZoom: 1 })
   }
-  const edges: Edge[] = !showConnections && !trace ? [] : links
-    .filter(link => !trace || traceIds.has(link.source) && traceIds.has(link.target))
-    .map(link => ({ ...link, type: 'default', selectable: false, focusable: false, interactionWidth: 0,
-      className: 'provenance-edge' + (trace ? (traceLayer.has(link.source) ? ' is-related' : ' is-muted')
-        : p.selected.length ? (p.selected.includes(link.source) || p.selected.includes(link.target) ? ' is-related' : ' is-muted') : ''),
-    }))
   const arrangeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const multi = p.selected.length > 1
   const selectionKey = p.selected.join('\0')
@@ -110,6 +120,7 @@ export function Board(p: BoardProps) {
   const selectedItems = p.items.filter(i => sel.has(i.id))
   const readyIds = selectedItems.filter(usableImage).map(i => i.id)
   const actions = selectionTools(p.tools)
+  const toolbarTools = canvasToolbarTools(p.tools, multi)
 
   useEffect(() => () => { if (arrangeTimer.current) clearTimeout(arrangeTimer.current) }, [])
   useEffect(() => { setPanel(null); setHasMask(false); maskDataUrl.current = undefined }, [selectionKey])
@@ -140,8 +151,9 @@ export function Board(p: BoardProps) {
   const openTool = (t: ToolDef, id: string) => {
     setMenu(null)
     setHistoryTool(null)
+    regenerationAnchor.current = undefined
     setTrace(null)
-    if (t.fields?.length) {
+    if (t.fields?.length || unavailableCanvasTool(t) || multi) {
       if (panel === t.id) { setPanel(null); return }
       setParams(defaultParams(t)); setHasMask(false); maskDataUrl.current = undefined; setMaskKey((k) => k + 1); setPanel(t.id)
     } else { setPanel(null); p.onRunTool(t.id, [id]) }
@@ -156,7 +168,8 @@ export function Board(p: BoardProps) {
     if (a.previewOnly) {
       // History navigation must never execute a no-parameter tool on mount.
       setMenu(null); setHasMask(false); maskDataUrl.current = undefined; setMaskKey(k => k + 1)
-      setHistoryTool({ ...t, tip: '历史参数已带入。请确认参考图片与参数，再点击生成。',
+      regenerationAnchor.current = a.anchorId
+      setHistoryTool({ ...t, tip: a.notice ? `${a.notice}。请确认参数后生成。` : '历史参数已带入。请确认参考图片与参数，再点击生成。',
         fields: t.options ? [{ id: 'historyOption', label: '处理规格', kind: 'segment', options: t.options, default: option ?? t.options[0]?.id }] : t.fields })
       setParams({ ...generationToolParameters(t, a.params), ...(t.options ? { historyOption: option ?? t.options[0]?.id } : {}) })
       setPanel(t.id)
@@ -171,9 +184,9 @@ export function Board(p: BoardProps) {
     return {
       id: i.id,
       type: 'img' as const,
-      className: trace ? (traceLayer.has(i.id) ? 'provenance-current' : traceIds.has(i.id) ? 'provenance-chain' : 'provenance-muted') : undefined,
+      className: p.focusId && p.focusId !== i.id ? 'nav-focus-muted' : trace ? (traceLayer.has(i.id) ? 'provenance-current' : traceIds.has(i.id) ? 'provenance-chain' : 'provenance-muted') : undefined,
       position: { x: i.x, y: i.y },
-      data: { item: i, multi, onRetry: p.onRetryTool, overlay: panel && p.selected.length === 1 && p.selected[0] === i.id ? overlay : undefined },
+      data: { item: i, multi, onRetry: p.onRetryTool ? (runId: string) => p.onRetryTool?.(runId, i) : undefined, overlay: panel && sel.has(i.id) && (p.selected.length === 1 || panelDef?.id === 'adjust') ? overlay : undefined },
       zIndex: panel && p.selected[0] === i.id ? p.items.length + 1 : index,
       selected: sel.has(i.id),
       draggable: !i.locked && p.tool === 'select' && !arranging,
@@ -182,7 +195,7 @@ export function Board(p: BoardProps) {
       height: h,
       measured: { width: i.w, height: h },
     }
-  }), [p.items, p.selected, multi, p.tool, p.onRetryTool, panel, overlay, trace, traceLayer, traceIds, arranging])
+  }), [p.items, p.selected, p.focusId, multi, p.tool, p.onRetryTool, panel, overlay, trace, traceLayer, traceIds, arranging])
 
   const onNodesChange = useCallback((changes: NodeChange<ImageNodeType>[]) => {
     const next = applyNodeChanges(changes, nodes)
@@ -226,16 +239,25 @@ export function Board(p: BoardProps) {
     toast(`已删除 ${ids.length} 张`)
   }
   const openAction = (def: ToolDef, id: string, at: { x: number; y: number }, trigger?: HTMLButtonElement) => {
-    if (def.options?.length) { setPanel(null); setMenu({ kind: 'options', id, ...at, toolId: def.id, trigger }) }
+    if (def.options?.length || ['describe', 'text-edit'].includes(def.id)) { setPanel(null); setMenu({ kind: 'options', id, ...at, toolId: def.id, trigger }) }
     else openTool(def, id)
   }
   useEffect(() => {
     if (p.active === false) return
-    const editable = (target: EventTarget | null) => target instanceof HTMLElement && Boolean(target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]'))
+    const editable = (target: EventTarget | null) => target instanceof HTMLElement && Boolean(target.closest('input, textarea, select, [contenteditable="true"], dialog, [role="dialog"]'))
     const key = (event: KeyboardEvent) => {
       if (editable(event.target) || event.defaultPrevented) return
       if (event.key === 'Escape') { setMenu(null); setPanel(null); p.onSelect([]); stage.current?.focus({ preventScroll: true }) }
       else if ((event.key === 'Delete' || event.key === 'Backspace') && p.selected.length) { event.preventDefault(); remove(p.selected) }
+      else if ((event.ctrlKey || event.metaKey) && event.altKey && event.key.toLowerCase() === 'l') {
+        event.preventDefault()
+        const locked = !selectedItems.every(item => item.resolutionLocked)
+        p.onItems(p.items.map(item => sel.has(item.id) ? { ...item, resolutionLocked: locked } : item), true)
+      } else if ((event.ctrlKey || event.metaKey) && (['BracketLeft', 'BracketRight'].includes(event.code) || ['[', ']', '{', '}'].includes(event.key))) {
+        event.preventDefault()
+        const up = event.code === 'BracketRight' || [']', '}'].includes(event.key)
+        reorder(p.selected, up ? event.shiftKey ? 'front' : 'up' : event.shiftKey ? 'back' : 'down')
+      }
     }
     const copied = (event: ClipboardEvent) => {
       if (editable(event.target) || event.defaultPrevented || !readyIds.length) return
@@ -267,9 +289,9 @@ export function Board(p: BoardProps) {
     requestAnimationFrame(() => fitItems(arranged, false, 340))
   }
   const updateItem = (id: string, patch: Partial<CanvasItem>) => p.onItems(p.items.map((i) => (i.id === id ? { ...i, ...patch } : i)), true)
-  const reorder = (ids: string[], front: boolean) => {
-    p.onItems(reorderCanvasItems(p.items, ids, front), true)
-    toast(front ? '已移到顶层' : '已移到底层')
+  const reorder = (ids: string[], order: LayerOrder) => {
+    p.onItems(reorderCanvasItems(p.items, ids, order), true)
+    toast({ front: '已置顶', up: '已上移一层', down: '已下移一层', back: '已置底' }[order])
   }
 
   const wrapCls =
@@ -297,10 +319,7 @@ export function Board(p: BoardProps) {
     >
       <ReactFlow
         nodes={nodes}
-        edges={edges}
         nodesConnectable={false}
-        edgesFocusable={false}
-        elevateEdgesOnSelect={false}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onMoveStart={() => { setIsMoving(true); setMenu(null) }}
@@ -333,64 +352,57 @@ export function Board(p: BoardProps) {
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#1f1f1f" />
-        <CanvasNavigation items={p.items} selected={p.selected} cols={cols} onCols={setCols} onArrange={doArrange} active={p.active} drawerOpen={p.drawerOpen} />
+        <CanvasNavigation items={p.items} selected={p.selected} cols={cols} onCols={setCols} onArrange={doArrange} active={p.active} drawerOpen={p.drawerOpen} canvasBg={p.canvasBg} onCanvasBg={p.onCanvasBg} onPreview={p.onPreview} onDownload={p.onDownload} />
         <ViewportPortal>
           {sections.map(section => <div key={section.id} className="canvas-section-title" style={{ transform: `translate(${section.x}px, ${section.y}px)`, width: section.width }}>
             <span>{section.label}</span><small>{section.count} 张</small>
           </div>)}
         </ViewportPortal>
 
-        {one && usableImage(one) && (!menu || menu.kind === 'more' || menu.kind === 'options') && (
-          <>
-            <SelectionToolbar items={[one]} stage={stage}>
-              <div role="group" aria-label="常用 AI 工具" className="selection-group">
-                {actions.common.length ? actions.common.map(t => (
-                  <button type="button" key={t.id} aria-pressed={t.fields?.length ? panel === t.id : undefined}
-                    aria-haspopup={t.options ? 'menu' : undefined} aria-expanded={t.options ? menu?.kind === 'options' && menu.toolId === t.id : undefined}
-                    onClick={event => { const r = event.currentTarget.getBoundingClientRect(); if (menu?.kind === 'options' && menu.toolId === t.id) setMenu(null); else openAction(t, one.id, { x: r.left, y: r.bottom + 6 }, event.currentTarget) }}>
-                    <Icon name={t.icon} size={15} />{t.name}{t.options && <Icon name="chev" size={10} />}
-                  </button>
-                )) : <span className="selection-empty">暂无可用 AI 工具</span>}
-              </div>
-              <span className="dv" role="separator" aria-orientation="vertical" />
-              <div role="group" aria-label="图片流转" className="selection-group">
-                <button type="button" title="添加到对话" aria-label="添加到对话" onClick={() => p.onAddToChat([one.id])}><Icon name="chat" /></button>
-                <button type="button" title="存为素材" aria-label="存为素材" onClick={() => p.onSaveMaterial([one.id])}><Icon name="star" /></button>
-                <button type="button" title="下载" aria-label="下载" onClick={() => p.onDownload([one.id])}><Icon name="dl" /></button>
-                <button type="button" title="查看来源" aria-label="查看来源" onClick={event => viewSources(one.id, event.currentTarget)}><Icon name="provenance" /></button>
-              </div>
-              <button type="button" aria-haspopup="menu" aria-expanded={menu?.kind === 'more'} onClick={event => { const r = event.currentTarget.getBoundingClientRect(); setMenu(menu?.kind === 'more' ? null : { kind: 'more', id: one.id, x: r.left, y: r.bottom + 6, trigger: event.currentTarget }) }}><Icon name="more" />更多</button>
-            </SelectionToolbar>
-            {panelDef && (
-              <NodeToolbar nodeId={one.id} isVisible position={Position.Right} align="start" offset={12}>
-                <ToolPanel def={{ ...panelDef, name: [...actions.common, ...actions.more].find(t => t.id === panelDef.id)?.name ?? panelDef.name }} item={one} params={params}
-                  refChoices={p.items} hasMask={hasMask} onChange={setParams} onClearMask={() => { setHasMask(false); maskDataUrl.current = undefined; setMaskKey(k => k + 1) }}
-                  onClose={() => setPanel(null)}
-                  onSubmit={() => {
-                    const { historyOption, ...submitted } = params
-                    const id = historyTool?.options && typeof historyOption === 'string' ? `${panelDef.id}:${historyOption}` : panelDef.id
-                    setPanel(null)
-                    p.onRunTool(id, [one.id], { ...submitted, ...(maskDataUrl.current ? { maskDataUrl: maskDataUrl.current } : {}) })
-                  }}
-                />
-              </NodeToolbar>
-            )}
-            <NodeToolbar nodeId={one.id} isVisible position={Position.Bottom} align="start" offset={8}>
-              <span className="szc"><Icon name="lock" size={12} />W {one.image.width} · H {one.image.height}</span>
-            </NodeToolbar>
-          </>
-        )}
-        {multi && selectedItems.length > 1 && !menu && (
+        {selectedItems.length > 0 && readyIds.length > 0 && (!menu || ['more', 'options'].includes(menu.kind)) && <>
           <SelectionToolbar items={selectedItems} stage={stage}>
-            <span className="lbl">已选 {p.selected.length} 张</span>
-            <span className="dv" role="separator" aria-orientation="vertical" />
-            <button type="button" disabled={!readyIds.length} onClick={() => p.onDownload(readyIds)}><Icon name="dl" />下载</button>
-            <button type="button" disabled={!readyIds.length} onClick={() => p.onSaveMaterial(readyIds)}><Icon name="star" />存为素材</button>
-            <button type="button" disabled={!readyIds.length} onClick={() => p.onAddToChat(readyIds)}><Icon name="chat" />添加到对话</button>
-            <button type="button" className="danger" onClick={() => remove(p.selected)}><Icon name="trash" />删除</button>
+            {multi && <span className="lbl">已选 {p.selected.length} 张</span>}
+            <div role="group" aria-label="常用 AI 工具" className="selection-group selection-quick-tools">
+              {toolbarTools.map(t => multi && t.id === 'upscale' ? <BatchAction key={t.id} items={selectedItems} toolId={t.id} label={t.name} /> :
+                <button type="button" key={t.id} title={t.name} aria-label={t.name} aria-pressed={panel === t.id}
+                  aria-haspopup={t.options || ['describe', 'text-edit'].includes(t.id) ? 'menu' : undefined}
+                  aria-expanded={t.options || ['describe', 'text-edit'].includes(t.id) ? menu?.kind === 'options' && menu.toolId === t.id : undefined}
+                  onClick={event => { const r = event.currentTarget.getBoundingClientRect(); if (menu?.kind === 'options' && menu.toolId === t.id) setMenu(null); else openAction(t, selectedItems[0].id, { x: r.left, y: r.bottom + 6 }, event.currentTarget) }}>
+                  {t.id === 'upscale' ? <span className="selection-hd" aria-hidden="true">HD</span> : <Icon name={t.icon} size={16} />}
+                  <span className="selection-label" aria-hidden="true">{t.name}</span>
+                  {(t.options || ['describe', 'text-edit'].includes(t.id)) && <Icon name="chev" size={10} />}
+                </button>)}
+              {!multi && <button type="button" title="更多工具" aria-label="更多工具" aria-haspopup="menu" aria-expanded={menu?.kind === 'more'}
+                onClick={event => { const r = event.currentTarget.getBoundingClientRect(); setMenu(menu?.kind === 'more' ? null : { kind: 'more', id: selectedItems[0].id, x: r.left, y: r.bottom + 6, trigger: event.currentTarget }) }}><Icon name="more" size={19} /></button>}
+            </div>
           </SelectionToolbar>
-        )}
+          <SelectionSideTools items={selectedItems} stage={stage}>
+            <VerticalSelectionTools multi={multi}>
+              {!multi && p.tools.find(t => t.id === 'crop') && <button type="button" title="裁剪" aria-label="裁剪" aria-pressed={panel === 'crop'} onClick={() => openTool(p.tools.find(t => t.id === 'crop')!, selectedItems[0].id)}><Icon name="crop" /></button>}
+              {p.tools.find(t => t.id === 'adjust') && <button type="button" title="调色" aria-label="调色" aria-pressed={panel === 'adjust'} onClick={() => openTool(p.tools.find(t => t.id === 'adjust')!, selectedItems[0].id)}><Icon name="tune" /></button>}
+              {multi && <button type="button" title="导出 PSD · 即将上线" aria-label="导出 PSD · 即将上线" disabled><Icon name="doc" /></button>}
+              <button type="button" title="添加到聊天" aria-label="添加到聊天" onClick={() => p.onAddToChat(readyIds)}><Icon name="chat" /></button>
+              {multi ? <button type="button" title="图层合并" aria-label="图层合并" disabled={p.imageEditing || readyIds.length !== selectedItems.length} onClick={() => p.onImageEdit(readyIds, { kind: 'merge' })}><Icon name="layers" /></button>
+                : <button type="button" title="生成视频" aria-label="生成视频" onClick={() => p.onVideo(selectedItems[0].id)}><Icon name="video" /></button>}
+            </VerticalSelectionTools>
+          {panelDef && <>
+            <ToolPanel def={{ ...panelDef, name: toolbarTools.find(t => t.id === panelDef.id)?.name ?? panelDef.name }} item={selectedItems[0]} params={params}
+              unavailableReason={p.imageEditing ? '图片处理中…' : unavailableCanvasTool(panelDef) ?? (multi && !['crop', 'adjust'].includes(panelDef.id) ? '该工具暂不支持多选，请选择单张图片使用' : undefined)}
+              refChoices={p.items} hasMask={hasMask} onChange={setParams} onClearMask={() => { setHasMask(false); maskDataUrl.current = undefined; setMaskKey(k => k + 1) }}
+              onClose={() => setPanel(null)} onSubmit={() => {
+                const { historyOption, ...submitted } = params
+                const id = historyTool?.options && typeof historyOption === 'string' ? `${panelDef.id}:${historyOption}` : panelDef.id
+                setPanel(null)
+                if (panelDef.id === 'crop' || panelDef.id === 'adjust') p.onImageEdit(readyIds, { kind: panelDef.id, params: submitted })
+                else p.onRunTool(id, [selectedItems[0].id], { ...submitted, ...(maskDataUrl.current ? { maskDataUrl: maskDataUrl.current } : {}) }, regenerationAnchor.current)
+              }} />
+          </>}
+          </SelectionSideTools>
+        </>}
       </ReactFlow>
+      {one && <SelectionFrame item={one} stage={stage}>
+        {usableImage(one) && <ImageDimensionsControl item={one} busy={p.imageEditing} onPatch={patch => updateItem(one.id, patch)} onResize={(width, height) => p.onImageEdit([one.id], { kind: 'resize', width, height })} />}
+      </SelectionFrame>}
 
       <div className="provenance-controls nodrag nopan">
         {trace && (
@@ -403,9 +415,6 @@ export function Board(p: BoardProps) {
             </div>}
           </div>
         )}
-        <button ref={connectionsToggle} type="button" className="provenance-toggle" aria-pressed={showConnections} onClick={() => { setShowConnections(value => !value); setTrace(null) }}>
-          <Icon name="provenance" size={16} /><span>显示连线</span><span className="provenance-switch" aria-hidden="true" />
-        </button>
       </div>
 
       {dragOver && <div className="dropzone">松开放到画布</div>}
@@ -418,40 +427,42 @@ export function Board(p: BoardProps) {
         const batchMenu = ids.length > 1
         const close = () => setMenu(null)
         const act = (fn: () => void) => { close(); fn() }
-        const tools = menu.kind === 'more' ? actions.more : actions.common
-        const options = menu.kind === 'options' ? p.tools.find(t => t.id === menu.toolId) : undefined
-        return (
-          <FloatingMenu key={menu.kind} x={menu.x} y={menu.y} onClose={close} width={236} trigger={'trigger' in menu ? menu.trigger : undefined} label={menu.kind === 'options' ? '选择放大倍率' : menu.kind === 'more' ? '更多已接入工具' : '图片右键菜单'}>
-            <div className="gt">{batchMenu ? `已选 ${ids.length} 张` : menu.kind === 'more' ? '已接入工具' : menu.kind === 'options' ? '放大倍率' : '图片操作'}</div>
-            {!batchMenu && usableImage(item) && (
-              <>
-                {options ? options.options?.map(option => <button type="button" role="menuitem" className="mi" key={option.id} onClick={() => act(() => p.onRunTool(`${options.id}:${option.id}`, [item.id]))}><Icon name={options.icon} />{option.label}<small>{option.hint}</small></button>) : tools.map(t => (
-                  <button type="button" role="menuitem" key={t.id} className="mi" onClick={event => { const r = event.currentTarget.getBoundingClientRect(); openAction(t, item.id, { x: r.left, y: r.top }) }}><Icon name={t.icon} />{t.name}{t.options && <small>选择倍率</small>}</button>
-                ))}
-                {!options && !tools.length && <div className="selection-empty">暂无已接入工具</div>}
-                {menu.kind === 'node' && <button type="button" role="menuitem" className="mi" onClick={() => setMenu({ ...menu, kind: 'more' })}><Icon name="more" />更多工具<small>{actions.more.length}</small></button>}
-                <div className="sep" role="separator" />
-              </>
-            )}
-            <button type="button" role="menuitem" className="mi" disabled={!availableIds.length} onClick={() => act(() => p.onAddToChat(availableIds))}><Icon name="chat" />添加到对话</button>
-            <button type="button" role="menuitem" className="mi" disabled={!availableIds.length} onClick={() => act(() => copy())}><Icon name="copy" />复制<small>Ctrl C</small></button>
-            <button type="button" role="menuitem" className="mi" disabled={!availableIds.length} onClick={() => act(() => p.onDownload(availableIds))}><Icon name="dl" />下载</button>
-            <button type="button" role="menuitem" className="mi" disabled={!availableIds.length} onClick={() => act(() => p.onSaveMaterial(availableIds))}><Icon name="star" />存为素材</button>
-            {menu.kind === 'node' && (
-              <>
-                <div className="sep" role="separator" />
-                {!batchMenu && <button type="button" role="menuitem" className="mi" disabled={!usableImage(item)} onClick={() => act(() => p.onSetCover(item.id))}><Icon name="cover" />设为项目封面</button>}
-                <button type="button" role="menuitem" className="mi" onClick={() => act(() => reorder(ids, true))}><Icon name="front" />移到顶层</button>
-                <button type="button" role="menuitem" className="mi" onClick={() => act(() => reorder(ids, false))}><Icon name="back" />移到底层</button>
-                {!batchMenu && <button type="button" role="menuitem" className="mi" onClick={() => act(() => updateItem(item.id, { locked: !item.locked }))}><Icon name="lock" />{item.locked ? '解除锁定' : '锁定位置'}</button>}
-                {!batchMenu && <button type="button" role="menuitem" className="mi" onClick={event => viewSources(item.id, event.currentTarget)}><Icon name="provenance" />查看来源</button>}
-                {!batchMenu && <button type="button" role="menuitem" className="mi" disabled={!usableImage(item)} onClick={() => act(() => p.onPreview(item.id))}><Icon name="info" />查看大图与参数</button>}
-              </>
-            )}
-            <div className="sep" role="separator" />
-            <button type="button" role="menuitem" className="mi danger" onClick={() => remove(ids)}><Icon name="trash" />删除<small>Delete</small></button>
+        if (menu.kind === 'layers') return <FloatingMenu x={menu.x} y={menu.y} onClose={close} label="图层顺序" trigger={menu.trigger}>
+          {([['front', '置顶', 'Ctrl Shift ]'], ['up', '上移', 'Ctrl ]'], ['down', '下移', 'Ctrl ['], ['back', '置底', 'Ctrl Shift [']] as const).map(([order, label, shortcut]) =>
+            <button type="button" role="menuitem" className="mi" key={order} onClick={() => act(() => reorder(ids, order))}><Icon name={order === 'front' || order === 'up' ? 'front' : 'back'} />{label}<small>{shortcut}</small></button>)}
+        </FloatingMenu>
+        if (menu.kind === 'more') return <FloatingMenu x={menu.x} y={menu.y} onClose={close} width={220} trigger={menu.trigger} label="更多工具">
+          {item.ref.type === 'generation' && <RegenerationActions key={item.id} item={item} items={p.items} messages={p.messages ?? []} tools={p.tools}
+            submitting={p.toolSubmitting} onClose={close} onRun={p.onRunTool} onEditTool={p.onEditTool} onEditChat={p.onEditChat} />}
+          {[...actions.common, ...actions.more].filter(t => !toolbarTools.some(shown => shown.id === t.id)).map(t => <button type="button" role="menuitem" key={t.id} className="mi" onClick={() => openTool(t, item.id)}><Icon name={t.icon} />{t.name}</button>)}
+          <div className="sep" role="separator" />
+          <button type="button" role="menuitem" className="mi" onClick={() => act(() => updateItem(item.id, { locked: !item.locked }))}><Icon name="lock" />{item.locked ? '解除位置锁定' : '锁定位置'}</button>
+          <button type="button" role="menuitem" className="mi" onClick={event => viewSources(item.id, event.currentTarget)}><Icon name="provenance" />查看来源</button>
+          <button type="button" role="menuitem" className="mi" onClick={() => act(() => p.onPreview(item.id))}><Icon name="info" />查看大图与参数</button>
+        </FloatingMenu>
+        if (menu.kind === 'options') {
+          const def = p.tools.find(t => t.id === menu.toolId)
+          if (!def) return null
+          return <FloatingMenu x={menu.x} y={menu.y} onClose={close} trigger={menu.trigger} label={`${def.name}选项`}>
+            {def.options ? def.options.map(option => <button type="button" role="menuitem" className="mi" key={option.id} onClick={() => act(() => p.onRunTool(`${def.id}:${option.id}`, [item.id]))}><Icon name={def.icon} />{option.label}<small>{option.hint}</small></button>)
+              : <button type="button" role="menuitem" className="mi" onClick={() => multi || unavailableCanvasTool(def) ? openTool(def, item.id) : act(() => p.onRunTool(def.id, [item.id]))}><Icon name={def.icon} />{def.name}</button>}
           </FloatingMenu>
-        )
+        }
+        return <FloatingMenu x={menu.x} y={menu.y} onClose={close} width={248} label="图片右键菜单">
+          <button type="button" role="menuitem" className="mi" disabled={!availableIds.length} onClick={() => act(() => copy())}><Icon name="copy" />复制<small>Ctrl C</small></button>
+          <button type="button" role="menuitem" className="mi" disabled={!availableIds.length} onClick={() => act(() => p.onDownload(availableIds, 'original'))}><Icon name="dl" />下载无损<small>原图</small></button>
+          <button type="button" role="menuitem" className="mi" disabled={!availableIds.length} onClick={() => act(() => p.onDownload(availableIds, 'webp'))}><Icon name="dl" />下载<small>预览 WebP</small></button>
+          <button type="button" role="menuitem" className="mi" disabled={!availableIds.length} onClick={() => act(() => p.onSaveMaterial(availableIds))}><Icon name="star" />添加到素材库</button>
+          <button type="button" role="menuitem" className="mi" disabled={batchMenu || !usableImage(item)} onClick={() => act(() => p.onSetCover(item.id))}><Icon name="cover" />设为封面</button>
+          <button type="button" role="menuitemcheckbox" aria-checked={ids.every(id => p.items.find(i => i.id === id)?.resolutionLocked)} className="mi" onClick={() => act(() => {
+            const locked = !ids.every(id => p.items.find(i => i.id === id)?.resolutionLocked)
+            p.onItems(p.items.map(i => ids.includes(i.id) ? { ...i, resolutionLocked: locked } : i), true)
+          })}><Icon name="lock" />{ids.every(id => p.items.find(i => i.id === id)?.resolutionLocked) ? '解除分辨率锁定' : '锁定分辨率'}<small>Ctrl Alt L</small></button>
+          <button type="button" role="menuitem" className="mi" aria-haspopup="menu" onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ kind: 'layers', id: item.id, x: rect.right + 4, y: rect.top, trigger: event.currentTarget }) }}><Icon name="layer" />图层顺序<small>›</small></button>
+          <button type="button" role="menuitem" className="mi" disabled={!availableIds.length} onClick={() => act(() => p.onAddToChat(availableIds))}><Icon name="chat" />添加到聊天</button>
+          <div className="sep" role="separator" />
+          <button type="button" role="menuitem" className="mi danger" onClick={() => remove(ids)}><Icon name="trash" />删除<small>Delete</small></button>
+        </FloatingMenu>
       })()}
       {menu?.kind === 'pane' && (
         <FloatingMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} width={248} label="画布右键菜单">

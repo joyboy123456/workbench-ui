@@ -39,3 +39,9 @@ export function referenceParents(items: CanvasItem[], sourceIds: string[], param
   const imageIds = Object.values(params ?? {}).flatMap(value => value && typeof value === 'object' && !Array.isArray(value) ? [value.id] : [])
   return [...new Set([...sourceIds, ...items.filter(item => imageIds.includes(item.image.id)).map(item => item.id)])]
 }
+
+/** The all-connections toggle takes priority over a focused ancestry trace. */
+export function visibleProvenanceLinks(items: CanvasItem[], showConnections: boolean, traceIds?: ReadonlySet<string>) {
+  if (!showConnections && !traceIds) return []
+  return provenanceLinks(items).filter(link => showConnections || !traceIds || traceIds.has(link.source) && traceIds.has(link.target))
+}

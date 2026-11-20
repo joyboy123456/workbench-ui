@@ -1,0 +1,355 @@
+[
+  {
+    "id": 701,
+    "name": "AI商品主图（服装大片）",
+    "group": "服装主图",
+    "description": "上传产品图、模特图，生成服装大片",
+    "featureType": "ai-fashion-photo",
+    "inputs": [],
+    "output": "复用工作台现有结果与下载流程",
+    "stage": "connected"
+  },
+  {
+    "id": 705,
+    "name": "服装主图裂变",
+    "group": "服装主图",
+    "description": "基于服装主图选择16种拍摄机位，保留商品与人物，生成多机位套图",
+    "featureType": "photo-fission",
+    "inputs": [],
+    "output": "复用工作台现有结果与下载流程",
+    "stage": "connected"
+  },
+  {
+    "id": 706,
+    "name": "服装主图姿势裂变",
+    "group": "服装主图",
+    "description": "1张服装模特图衍生不同模特姿势和拍摄角度，提供大量姿势选择",
+    "featureType": "pose-fission",
+    "inputs": [],
+    "output": "复用工作台现有结果与下载流程",
+    "stage": "connected"
+  },
+  {
+    "id": 80231,
+    "name": "智能仿商品图/详情图",
+    "group": "服装主图",
+    "description": "上传产品图和参考详情图，生成同款电商详情图",
+    "featureType": null,
+    "inputs": [
+      "商品图",
+      "版式参考图",
+      "同款商品细节图 1（可选）",
+      "同款商品细节图 2（可选）"
+    ],
+    "output": "商品身份一致的参考版式成图",
+    "stage": "connected"
+  },
+  {
+    "id": 702,
+    "name": "服装商品图-元素替换",
+    "group": "服装主图",
+    "description": "一键替换服装大片中的元素，支持替换服装、环境、模特、鞋子",
+    "featureType": null,
+    "inputs": [
+      "原图",
+      "替换对象参考图"
+    ],
+    "output": "仅指定元素变化的商品图",
+    "stage": "connected"
+  },
+  {
+    "id": 707,
+    "name": "详情图裂变",
+    "group": "详情页",
+    "description": "支持23项电商套图裂变（白底平铺/3D悬浮/精修/部位特写）与微距三联",
+    "featureType": "garment-detail",
+    "inputs": [],
+    "output": "复用工作台现有结果与下载流程",
+    "stage": "connected"
+  },
+  {
+    "id": 80232,
+    "name": "AI商品详情页",
+    "group": "详情页",
+    "description": "从商品图生成1～10屏统一风格详情图，支持按屏下载及拼接长图",
+    "featureType": null,
+    "inputs": [
+      "产品图",
+      "产品细节图 1（可选）",
+      "产品细节图 2（可选）",
+      "产品细节图 3（可选）",
+      "产品细节图 4（可选）",
+      "产品细节图 5（可选）",
+      "指定模特图（可选）"
+    ],
+    "output": "商品信息准确、版式统一的完整详情页",
+    "stage": "connected"
+  },
+  {
+    "id": 80262,
+    "name": "模特换衣（智能提示词）",
+    "group": "模特换衣",
+    "description": "根据场景描述与服装参考图完成智能模特试穿",
+    "featureType": null,
+    "inputs": [
+      "人物底图",
+      "服装参考图",
+      "服装细节图 1（可选）",
+      "服装细节图 2（可选）"
+    ],
+    "output": "人物身份与服装细节一致的试穿图",
+    "stage": "connected"
+  },
+  {
+    "id": 709,
+    "name": "批量换衣",
+    "group": "模特换衣",
+    "description": "人物图组与服装图组逐一组合换衣，每件可绑定自己的细节图",
+    "featureType": null,
+    "inputs": [
+      "人物底图",
+      "服装参考图",
+      "服装细节图 1（可选）",
+      "服装细节图 2（可选）"
+    ],
+    "output": "保留人物与背景、参考商品细节的换衣结果，需核对保真度",
+    "stage": "connected"
+  },
+  {
+    "id": 80212,
+    "name": "面料花型替换 / 同料换色",
+    "group": "服装款式",
+    "description": "上传服装图和面料花型参考图，一键替换面料花型",
+    "featureType": "material-edit",
+    "inputs": [],
+    "output": "复用工作台现有结果与下载流程",
+    "stage": "connected"
+  },
+  {
+    "id": 80213,
+    "name": "参考改款",
+    "group": "服装款式",
+    "description": "上传参考款式图与原款图，按指定部位融合生成改款方案",
+    "featureType": null,
+    "inputs": [
+      "改款参考图",
+      "待修改原款图"
+    ],
+    "output": "按指定部位改动的款式方案",
+    "stage": "connected"
+  },
+  {
+    "id": 80215,
+    "name": "服装生产款式线稿",
+    "group": "服装款式",
+    "description": "上传服装图，生成结构清晰的白底平面生产款式线稿",
+    "featureType": null,
+    "inputs": [
+      "服装图（选择需要绘制的一面）"
+    ],
+    "output": "原图对应单面的白底款式线稿，生产用途需版师确认",
+    "stage": "connected"
+  },
+  {
+    "id": 80216,
+    "name": "单图款式裂变",
+    "group": "服装款式",
+    "description": "基于单个爆款服装生成平铺白底、真人模特宫格或原图保持改款方案",
+    "featureType": null,
+    "inputs": [
+      "原款图"
+    ],
+    "output": "保留核心设计基因的多方案款式图",
+    "stage": "connected"
+  },
+  {
+    "id": 80217,
+    "name": "多款式混合",
+    "group": "服装款式",
+    "description": "融合 2～10 张款式参考图，生成混合设计方案",
+    "featureType": null,
+    "inputs": [
+      "款式参考图 1",
+      "款式参考图 2",
+      "款式参考图 3（可选）",
+      "款式参考图 4（可选）"
+    ],
+    "output": "各参考部位来源明确的新款式",
+    "stage": "connected"
+  },
+  {
+    "id": 80238,
+    "name": "虚拟样机",
+    "group": "服装款式",
+    "description": "上传商品底图与图案，设置贴图位置、大小和角度，生成贴合商品光影的样机效果图",
+    "featureType": null,
+    "inputs": [
+      "商品底图",
+      "图案或Logo素材"
+    ],
+    "output": "一张保留商品结构与光影的贴图效果图",
+    "stage": "connected"
+  },
+  {
+    "id": 80239,
+    "name": "参考图校色",
+    "group": "修图改图",
+    "description": "参考目标图片色彩，对待处理图片进行校色匹配",
+    "featureType": null,
+    "inputs": [
+      "待校色图",
+      "目标色彩参考图"
+    ],
+    "output": "结构与纹理保持的校色图",
+    "stage": "connected"
+  },
+  {
+    "id": 80240,
+    "name": "局部修复",
+    "group": "修图改图",
+    "description": "局部修复功能用于修复图片中的局部错误或缺失细节",
+    "featureType": null,
+    "inputs": [
+      "待修复原图",
+      "细节参考图（可选）"
+    ],
+    "output": "文字定位的生成式局部修复；无硬蒙版，不能保证区域外像素不变",
+    "stage": "connected"
+  },
+  {
+    "id": 80242,
+    "name": "高清放大",
+    "group": "修图改图",
+    "description": "采用 GrsAI Gemini 4K 输出与保真提示词进行画质增强，非像素级超分",
+    "featureType": null,
+    "inputs": [
+      "待放大图片"
+    ],
+    "output": "4K 档位的生成式高清增强结果，纹理与五官细节需人工核对",
+    "stage": "connected"
+  },
+  {
+    "id": 80243,
+    "name": "去水印",
+    "group": "修图改图",
+    "description": "干净移除图片中的水印与文字遮挡并还原底层面料肌理",
+    "featureType": null,
+    "inputs": [
+      "待处理原图"
+    ],
+    "output": "指定覆盖物清理后的图片",
+    "stage": "connected"
+  },
+  {
+    "id": 80244,
+    "name": "抠图移除背景",
+    "group": "修图改图",
+    "description": "上传图片并配置背景移除参数",
+    "featureType": null,
+    "inputs": [
+      "原图"
+    ],
+    "output": "复用已有智能抠图编辑器，导出透明PNG",
+    "stage": "utility",
+    "availability": "credentials-required"
+  },
+  {
+    "id": 80301,
+    "name": "面料花型提取",
+    "group": "图案面料",
+    "description": "从服装或面料图提取平面花型，可选择四方连续接版",
+    "featureType": null,
+    "inputs": [
+      "带花型的服装或面料图"
+    ],
+    "output": "保留颜色、密度与比例的平面花型",
+    "stage": "connected"
+  },
+  {
+    "id": 80302,
+    "name": "去除布纹颗粒",
+    "group": "图案面料",
+    "description": "按轻微、标准或强力三档清理布纹颗粒，保留印花图案与颜色",
+    "featureType": null,
+    "inputs": [
+      "待处理面料图"
+    ],
+    "output": "平整清晰的面料图案",
+    "stage": "connected"
+  },
+  {
+    "id": 80303,
+    "name": "家纺风格裂变",
+    "group": "家纺设计",
+    "description": "家纺机位与场景裂变，支持多参考床品风格套图，按角色上传细节、模特与宠物图",
+    "featureType": null,
+    "inputs": [
+      "家纺产品主图",
+      "同商品细节图 1（可选）",
+      "同商品细节图 2（可选）",
+      "同商品细节图 3（可选）"
+    ],
+    "output": "机位或常规场景最多8张，多参考风格套图最多15张",
+    "stage": "connected"
+  },
+  {
+    "id": 80304,
+    "name": "被套花型裂变",
+    "group": "家纺设计",
+    "description": "支持平铺花型设计，以及主图、细节、背面、模特、宠物共同参考的床品场景套图",
+    "featureType": null,
+    "inputs": [
+      "原花型或成品图"
+    ],
+    "output": "独立平铺花型，或最多15个场景的床品实拍套图",
+    "stage": "connected"
+  },
+  {
+    "id": 80305,
+    "name": "商品配色方案",
+    "group": "服装款式",
+    "description": "文字配色或参考图批量配色，支持一对多、多对一及商品与配色矩阵",
+    "featureType": null,
+    "inputs": [
+      "服装商品图"
+    ],
+    "output": "每个商品与配色组合独立成图；文字配色可附HEX色卡",
+    "stage": "connected"
+  },
+  {
+    "id": 80245,
+    "name": "转矢量",
+    "group": "修图改图",
+    "description": "通过 GPT Image 2.6 将图片重绘为可编辑 SVG，适合图案、标志与平面图形。",
+    "featureType": null,
+    "inputs": [
+      "待转换原图"
+    ],
+    "output": "可下载的SVG矢量文件；复杂纹理、文字与颜色需核对",
+    "stage": "connected"
+  },
+  {
+    "id": 80263,
+    "name": "图反推提示词",
+    "group": "实用工具",
+    "description": "分析图片的主要元素、构图、风格、色彩与光影，反推一段可直接复用的中文生成提示词",
+    "featureType": null,
+    "inputs": [
+      "图片"
+    ],
+    "output": "一段可复制的生成提示词文本",
+    "stage": "connected"
+  },
+  {
+    "id": 80264,
+    "name": "海报图转描述",
+    "group": "实用工具",
+    "description": "穷举分析海报的构图、文字排版与创作风格，输出一段可复刻的中文描述文本",
+    "featureType": null,
+    "inputs": [
+      "海报图"
+    ],
+    "output": "一段海报描述文本",
+    "stage": "connected"
+  }
+]

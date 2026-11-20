@@ -1,4 +1,4 @@
-import type { BrandKit, ChatAttachment, FashionModel, ImageRef, Material, Product, ToolDef, ToolParams } from './types'
+import type { AgentMode, BrandKit, ChatAttachment, FashionModel, ImageRef, Material, Product, ToolDef, ToolParams } from './types'
 
 export const REFERENCE_GROUPS = ['画布上的图', '商品', '模特', '品牌', '素材'] as const
 export interface ReferenceChoice {
@@ -20,10 +20,36 @@ export function referenceChoices(canvas: { id: string; label: string; image: Ima
     ...materials.map(item => choice('material', item.id, item.name, '素材', item.image)),
   ]
 }
-export function mergeAttachments(current: ChatAttachment[], incoming: ChatAttachment[], limit = 10) {
+export function composerAttachments(mode: AgentMode, attachments: ChatAttachment[], firstFrame?: ChatAttachment): ChatAttachment[] {
+  if (mode === 'video') return firstFrame ? [firstFrame] : attachments.slice(0, 1)
+  return attachments.slice(0, COMPOSER_REFERENCE_LIMIT)
+}
+export const COMPOSER_REFERENCE_LIMIT = 8
+export function mergeAttachments(current: ChatAttachment[], incoming: ChatAttachment[], limit = COMPOSER_REFERENCE_LIMIT) {
   const next = [...current]
   for (const item of incoming) if (!next.some(existing => existing.image.id === item.image.id)) next.push(item)
   return next.slice(0, limit)
+}
+
+/** 画布选中图片动态同步到输入框：取消或切换选中时仅替换自动带入项，保留手动上传或 @ 引用的图。 */
+export function syncSelectedCanvasAttachments(
+  current: ChatAttachment[],
+  autoIds: ReadonlySet<string>,
+  selectedIds: readonly string[],
+  canvasImages: readonly { id: string; label: string; image: ImageRef }[],
+): { attachments: ChatAttachment[]; autoIds: Set<string> } {
+  const manual = current.filter(item => !autoIds.has(item.image.id))
+  const nextAutoIds = new Set<string>()
+  const selectedAttachments: ChatAttachment[] = []
+  for (const selectedId of selectedIds) {
+    const found = canvasImages.find(item => item.id === selectedId)
+    if (!found || manual.some(item => item.image.id === found.image.id)) continue
+    selectedAttachments.push({ kind: 'canvas', id: found.id, label: found.label, image: found.image })
+    nextAutoIds.add(found.image.id)
+  }
+  const merged = mergeAttachments(manual, selectedAttachments)
+  const keptAutoIds = new Set([...nextAutoIds].filter(imgId => merged.some(item => item.image.id === imgId)))
+  return { attachments: merged, autoIds: keptAutoIds }
 }
 export function mentionAt(text: string, caret: number) {
   const match = /(^|\s)([@*/])([^\s@*/]*)$/.exec(text.slice(0, caret))

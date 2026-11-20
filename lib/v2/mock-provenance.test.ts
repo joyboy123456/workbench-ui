@@ -42,7 +42,7 @@ test('mock chat references use the same parent and placement contract', async ()
   const project = await ds.createProject({})
   await ds.saveCanvas(project.id, [source])
   const added: CanvasItem[] = []
-  await ds.sendMessage(project.id, { text: '四张主图', mode: 'direct', attachments: [{ kind: 'canvas', id: source.id, label: '商品', image: source.image }] }, event => {
+  await ds.sendMessage(project.id, { text: '四张主图', mode: 'image', attachments: [{ kind: 'canvas', id: source.id, label: '商品', image: source.image }] }, event => {
     if (event.type === 'item-add') added.push(event.item)
   })
   assert.equal(added.length, 4)

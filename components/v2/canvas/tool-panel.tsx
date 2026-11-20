@@ -1,10 +1,12 @@
 'use client'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { V2_DISPLAY } from '@/lib/v2/display-config'
 import { toAssetReferenceChoices, type AssetReferenceChoice } from '@/lib/v2/asset-choices'
 import { useLoad, useV2 } from '@/lib/v2/data-source'
 import type { CanvasItem, ImageRef, ToolDef, ToolField, ToolParams } from '@/lib/v2/types'
 import { Icon } from '../icons'
 import { pickFiles, useToast } from '../ui'
+import { adjustmentFilter } from '@/lib/v2/canvas-raster'
 
 /** 字段默认值 */
 export function defaultParams(def: ToolDef): ToolParams {
@@ -15,15 +17,7 @@ export function defaultParams(def: ToolDef): ToolParams {
 
 /** 调色参数 → CSS filter（实时预览用；保存时由后端或 canvas 烘焙） */
 export function filterCss(p: ToolParams) {
-  const n = (k: string) => Number(p[k] ?? 0)
-  const t = n('temp')
-  return [
-    `brightness(${1 + n('bright') / 100})`,
-    `contrast(${1 + n('contrast') / 100})`,
-    `saturate(${1 + n('sat') / 100})`,
-    t > 0 ? `sepia(${t / 160})` : '',
-    t < 0 ? `hue-rotate(${t / 4}deg)` : '',
-  ].filter(Boolean).join(' ')
+  return adjustmentFilter(p)
 }
 
 export function ratioOf(p: ToolParams, def: ToolDef) {
@@ -44,6 +38,7 @@ export interface ToolPanelProps {
   onClearMask: () => void
   onClose: () => void
   onSubmit: () => void
+  unavailableReason?: string
 }
 
 /** 参数面板：贴在选中图右侧，图保持可见（涂抹、看扩图框、看调色预览）。宽 264。 */
@@ -89,19 +84,52 @@ export function ToolPanel(p: ToolPanelProps) {
     .some((f) => (f.kind === 'text' ? !String(params[f.id] ?? '').trim() : !params[f.id]))
   const needMask = def.overlay === 'mask' && !p.hasMask
   const multiEmpty = countField?.multi && count === 0
-  const disabled = missing || needMask || Boolean(multiEmpty)
+  const outpaint = def.id === 'outpaint'
+  const ratioField = def.fields?.find(field => field.id === 'ratio')
+  const supportedRatios = ratioField?.options ?? []
+  const currentRatio = String(params.ratio ?? ratioField?.default ?? '')
+  const [ratioWidth, ratioHeight] = currentRatio.split(':').map(Number)
+  const noExpansion = outpaint && ratioWidth * p.item.image.height === ratioHeight * p.item.image.width
+  const disabled = noExpansion || missing || needMask || Boolean(multiEmpty) || Boolean(p.unavailableReason)
   const cost = def.cost === undefined ? undefined : def.cost * Math.max(1, count)
 
   return (
-    <div className="tpn nodrag nopan nowheel" onPointerDown={(e) => e.stopPropagation()}>
+    <div className={'tpn nodrag nopan nowheel' + (outpaint ? ' tpn-outpaint' : '')} onPointerDown={(e) => e.stopPropagation()}>
       <div className="tpn-hd">
         <Icon name={def.icon} size={15} />
-        <b>{def.name}</b>
+        <b>{outpaint ? '扩图改比例' : def.name}</b>
         <button className="tpn-x" title="关闭（Esc）" onClick={p.onClose}><Icon name="x" size={14} /></button>
       </div>
-      {def.tip && <p className="tpn-tip">{def.tip}</p>}
+      {!outpaint && def.tip && <p className="tpn-tip">{def.tip}</p>}
+      {p.unavailableReason && <p className="tpn-tip" role="status">{p.unavailableReason}</p>}
       <div className="tpn-bd">
-        {(def.fields ?? []).map((f) => (
+        {outpaint && <>
+          <label className="outpaint-scale">缩放比例
+            <select aria-label="缩放比例" defaultValue="1">
+              <option value="1">1x</option>
+              <option value="1.5" disabled>1.5x · 待接入</option>
+              <option value="2" disabled>2x · 待接入</option>
+            </select>
+          </label>
+          <label className="outpaint-preset">预设<select defaultValue="general"><option value="general">通用</option></select></label>
+          <fieldset className="outpaint-ratios">
+            <legend className="sr-only">目标比例</legend>
+            {['original', '1:1', '3:4', '2:3', '9:16', '4:3', '3:2', '16:9', '4:5', '5:4'].map(ratio => {
+              const selected = currentRatio === ratio
+              const enabled = supportedRatios.some(option => option.id === ratio)
+              const [w, h] = ratio.split(':').map(Number)
+              const scale = 14 / Math.max(w, h)
+              return <label key={ratio} className="outpaint-ratio">
+                <input type="radio" name={`outpaint-ratio-${p.item.id}`} checked={selected} disabled={!enabled} onChange={() => set('ratio', ratio)} />
+                <span className="outpaint-mark" aria-hidden="true">{selected && <Icon name="check" size={14} />}</span>
+                <span className="outpaint-shape" aria-hidden="true">{ratio === 'original' ? <Icon name="fit" size={15} /> : <i style={{ width: w * scale, height: h * scale }} />}</span>
+                <span>{ratio === 'original' ? '原始比例' : ratio}</span>
+                {!enabled && <small>待接入</small>}
+              </label>
+            })}
+          </fieldset>
+        </>}
+        {(def.fields ?? []).filter(field => !outpaint || field.id !== 'ratio').map((f) => (
           <ToolFieldControl key={f.id} f={f} value={params[f.id]} onChange={(v) => set(f.id, v)} refChoices={referenceChoices} onUploadReference={uploadReference} />
         ))}
         {def.overlay === 'mask' && (
@@ -115,11 +143,16 @@ export function ToolPanel(p: ToolPanelProps) {
         {def.editor ? (
           <>
             <button className="tpn-ghost" onClick={p.onClose}>取消</button>
-            <button className="tpn-go" onClick={p.onSubmit}>另存为新图</button>
+            <button className="tpn-go" disabled={disabled} onClick={p.onSubmit}>{p.unavailableReason ? '即将上线' : '另存为新图'}</button>
+          </>
+        ) : outpaint ? (
+          <>
+            <button type="button" className="tpn-ghost" onClick={p.onClose}>取消</button>
+            <button type="button" className="tpn-go" disabled={disabled} onClick={p.onSubmit}>{noExpansion ? '请选择不同的比例' : `生成${count > 1 ? ` · ${count} 张` : ''}`}{V2_DISPLAY.showCreditPrices && <em><Icon name="zap" size={11} />{cost ?? '—'}</em>}</button>
           </>
         ) : (
           <button className="tpn-go wide" disabled={disabled} onClick={p.onSubmit}>
-            {needMask ? '先涂抹要处理的区域' : missing ? '还差必填项' : multiEmpty ? '至少选一个' : <>生成 {count > 1 ? `${count} 张` : ''}<em><Icon name="zap" size={11} />{cost ?? '—'}</em></>}
+            {needMask ? '先涂抹要处理的区域' : missing ? '还差必填项' : multiEmpty ? '至少选一个' : <>生成{count > 1 ? ` · ${count} 张` : ''}{V2_DISPLAY.showCreditPrices && <em><Icon name="zap" size={11} />{cost ?? '—'}</em>}</>}
           </button>
         )}
       </div>

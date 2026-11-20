@@ -5,6 +5,7 @@ import { useV2 } from '@/lib/v2/data-source'
 import type { ActiveTask } from '@/lib/v2/types'
 import { Icon } from './icons'
 import { useDismiss } from './ui'
+import { useV2Auth } from './auth'
 
 const PHASE_LABEL: Record<ActiveTask['phase'], string> = {
   queued: '排队中',
@@ -15,6 +16,7 @@ const PHASE_LABEL: Record<ActiveTask['phase'], string> = {
 
 export function TaskTray() {
   const ds = useV2()
+  const { user } = useV2Auth()
   const [tasks, setTasks] = useState<ActiveTask[]>([])
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -22,6 +24,8 @@ export function TaskTray() {
   useDismiss(open, () => setOpen(false), wrapRef)
 
   useEffect(() => {
+    setTasks([])
+    if (!user) return
     if (ds.subscribeTasks) {
       return ds.subscribeTasks(setTasks)
     }
@@ -30,7 +34,7 @@ export function TaskTray() {
     const load = () => {
       void ds.listActiveTasks?.().then((list) => {
         if (alive) setTasks(list)
-      })
+      }).catch(() => { if (alive) setTasks([]) })
     }
     load()
     const timer = window.setInterval(load, 2000)
@@ -38,7 +42,7 @@ export function TaskTray() {
       alive = false
       window.clearInterval(timer)
     }
-  }, [ds])
+  }, [ds, user?.id])
 
   if (tasks.length === 0) return null
 
@@ -62,10 +66,6 @@ export function TaskTray() {
                 <div className="task-tray-info">
                   <div className="task-tray-title">
                     <span>{task.title}</span>
-                    <small className="tnum">{task.progress}%</small>
-                  </div>
-                  <div className="task-tray-bar">
-                    <i style={{ width: `${Math.max(4, Math.min(100, task.progress))}%` }} />
                   </div>
                   <div className="task-tray-meta">
                     <span className="task-tray-phase">{PHASE_LABEL[task.phase]}</span>

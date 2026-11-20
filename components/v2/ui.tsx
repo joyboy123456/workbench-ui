@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { ImageRef } from '@/lib/v2/types'
 import { Icon, type IconName } from './icons'
@@ -158,18 +158,6 @@ export function Modal({ title, onClose, children, footer }: { title: string; onC
   )
 }
 
-/* ---------- 大图预览 ---------- */
-export function Preview({ image, onClose }: { image: ImageRef; onClose: () => void }) {
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', key)
-    return () => document.removeEventListener('keydown', key)
-  }, [onClose])
-  return (
-    <div className="preview-bg" onClick={onClose}><img src={image.url} alt="" /></div>
-  )
-}
-
 /** 图片或占位块，支持可选悬停浮层 */
 export function Thumb({ image, label, cover, ratio34, overlay }: { image?: ImageRef; label?: string; cover?: boolean; ratio34?: boolean; overlay?: ReactNode }) {
   const cls = 'ph2' + (ratio34 ? ' r34' : '') + (cover ? ' cov' : '')
@@ -228,11 +216,18 @@ export function relTime(iso: string) {
 
 /** 选文件 */
 export function pickFiles(accept = 'image/*', multiple = true): Promise<File[]> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const input = document.createElement('input')
     input.type = 'file'; input.accept = accept; input.multiple = multiple
-    input.onchange = () => resolve(Array.from(input.files ?? []))
-    input.addEventListener('cancel', () => resolve([]), { once: true })
-    input.click()
+    input.className = 'v2-file-picker'; input.tabIndex = -1
+    input.setAttribute('aria-label', '选择上传图片')
+    const finish = (files: File[]) => { input.remove(); resolve(files) }
+    input.onchange = () => finish(Array.from(input.files ?? []))
+    input.addEventListener('cancel', () => finish([]), { once: true })
+    // A connected control is required by some browsers. Keep activation in the
+    // original click stack, including when the trigger lives in a popover.
+    const owner = document.activeElement?.closest('.v2') ?? document.querySelector('.v2') ?? document.body
+    owner.append(input)
+    try { input.click() } catch (error) { input.remove(); reject(error) }
   })
 }

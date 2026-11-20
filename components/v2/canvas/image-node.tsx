@@ -1,48 +1,41 @@
 'use client'
 import { memo, useEffect, useRef, useState } from 'react'
 import type { NodeProps, Node } from '@xyflow/react'
-import { Handle, Position } from '@xyflow/react'
 import type { CanvasItem, ImageRef } from '@/lib/v2/types'
 import { Icon } from '../icons'
 import { useToast } from '../ui'
-import { GenerationArtwork, useGenerationState } from './generation-state'
+import { GenerationFx, GenerationSource, genDelay, useGenerationState } from './generation-state'
 
 /** 工具面板打开时画在图上的叠层 */
 export type NodeOverlay =
   | { kind: 'mask'; brush: number; clearKey: number; onMask: (has: boolean, dataUrl?: string) => void }
   | { kind: 'frame-out' | 'frame-in'; ratio: number }
   | { kind: 'filter'; css: string }
-export type ImageNodeData = { item: CanvasItem; multi: boolean; overlay?: NodeOverlay; onRetry?: (runId: string) => void | Promise<void> }
+export type ImageNodeData = { item: CanvasItem; multi: boolean; overlay?: NodeOverlay; onRetry?: (runId: string, item?: CanvasItem) => void | Promise<void> }
 export type ImageNodeType = Node<ImageNodeData, 'img'>
 
 /** A fixed output frame survives every lifecycle change; only its contents change. */
 function ImageNodeImpl({ data, selected }: NodeProps<ImageNodeType>) {
   const { item, multi, overlay, onRetry } = data
-  const { display, variant } = useGenerationState(item)
+  const { display } = useGenerationState(item)
   const toast = useToast()
   const running = item.status === 'running'
   const failed = item.status === 'failed'
   const [loadedUrl, setLoadedUrl] = useState('')
   const [failedUrl, setFailedUrl] = useState('')
+  const [revealedUrl, setRevealedUrl] = useState('')
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [retrying, setRetrying] = useState(false)
-  useEffect(() => { setRetrying(false) }, [item.status, item.startedAt, item.toolRunId])
+  const [playing, setPlaying] = useState(false)
+  useEffect(() => { setRetrying(false); setPlaying(false) }, [item.status, item.startedAt, item.toolRunId])
   const src = item.image.thumbUrl ?? item.image.url
+  const videoReady = item.mediaType === 'video' && Boolean(item.video?.url) && !running && !failed
   const hasImg = Boolean(item.image.url && !running && !failed)
-  const loadingImage = hasImg && loadedUrl !== src && failedUrl !== src
+  const loadingImage = hasImg && loadedUrl !== src && failedUrl !== src && !videoReady
   const loading = running || loadingImage
-  const loadFailed = hasImg && failedUrl === src
-  const size = item.targetSize ?? item.image
-  const pctLabel = loadingImage ? '99%' : display.percent !== undefined ? `${display.percent}%` : '0%'
-  const stageLabel = loadingImage
-    ? '载入中'
-    : item.generationPhase === 'queued'
-      ? '排队中'
-      : item.generationPhase === 'processing'
-        ? '载入中'
-        : item.generationPhase === 'unconfirmed'
-          ? '确认中'
-          : '生成中'
+  const loadFailed = hasImg && failedUrl === src && !videoReady
+  const fog = loading || (hasImg && !loadFailed && !videoReady && revealedUrl !== src)
+  const stageLabel = loadingImage ? '载入中' : display.label
   return (
     <div
       className={
@@ -50,29 +43,41 @@ function ImageNodeImpl({ data, selected }: NodeProps<ImageNodeType>) {
         (hasImg && loadedUrl === src ? ' reveal' : '') +
         (selected && !multi ? ' sel' : '') +
         (failed || loadFailed ? ' failed' : '') +
-        (loading ? ` gen phase-${item.generationPhase ?? 'processing'}` : '') +
+        (fog ? ` gen${item.placeholder?.url ? ' gen-e' : ''} phase-${item.generationPhase ?? 'processing'}` : '') +
         (item.targetSize ? ' fixed-frame' : '')
       }
-      style={{ width: '100%', height: '100%' }}
+      style={fog ? { width: '100%', height: '100%', '--delay': genDelay(item.id) } as React.CSSProperties : { width: '100%', height: '100%' }}
       data-generation-state={failed || loadFailed ? 'failed' : loadingImage ? 'processing' : item.status === 'done' ? 'done' : item.generationPhase}
     >
-      <Handle type="target" position={Position.Left} isConnectable={false} className="provenance-port" />
-      <Handle type="source" position={Position.Right} isConnectable={false} className="provenance-port" />
-      {hasImg && <img key={`${src}:${loadAttempt}`} src={src} alt="" draggable={false}
+      {hasImg && !videoReady && <img key={`${src}:${loadAttempt}`} src={src} alt="" draggable={false}
         className={loadedUrl === src ? 'result-loaded' : 'result-loading'}
-        onLoad={() => { setLoadedUrl(src); setFailedUrl('') }} onError={() => setFailedUrl(src)}
+        onLoad={() => {
+          setLoadedUrl(src); setFailedUrl('')
+          if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) setRevealedUrl(src)
+        }} onError={() => setFailedUrl(src)}
         style={overlay?.kind === 'filter' ? { filter: overlay.css } : undefined} />}
+      {videoReady && item.video && (playing ? (
+        <video className="node-video nodrag nopan nowheel" src={item.video.url} controls autoPlay playsInline
+          onEnded={() => setPlaying(false)} onError={() => { setPlaying(false); toast('视频播放失败，可尝试重新打开') }}
+          onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()} />
+      ) : (
+        <div className="node-video-poster nodrag nopan" role="button" tabIndex={0} aria-label="播放视频" title="播放视频（双击也可）"
+          onClick={event => { event.stopPropagation(); setPlaying(true) }}
+          onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setPlaying(true) } }}
+          onDoubleClick={event => { event.stopPropagation(); setPlaying(true) }}>
+          <img src={src} alt="" draggable={false} className="result-loaded" />
+          <span className="node-video-play"><Icon name="play" size={26} /></span>
+          <span className="node-video-dim tnum">{Math.round(item.video.duration)} 秒</span>
+        </div>
+      ))}
       {overlay?.kind === 'mask' && <MaskLayer image={item.image} brush={overlay.brush} clearKey={overlay.clearKey} onMask={overlay.onMask} />}
       {overlay?.kind === 'frame-in' && <i className="ov-crop" style={frameIn(item.image.width / item.image.height, overlay.ratio)} />}
-      {loading && <>
-        <GenerationArtwork variant={variant} />
-        <span className="gen-pill tnum" role="status" aria-label={`进度 ${pctLabel}`}><i aria-hidden />{pctLabel}</span>
-        <span className="gen-stage-pill" role="status">{stageLabel}</span>
-        <div className="generation-caption">
-          {running && display.percent !== undefined && <progress aria-label={display.estimated ? '图片生成估算进度' : '图片生成进度'} value={display.percent} max={100} />}
-          <span>目标 {size.width} × {size.height}</span>
-        </div>
-      </>}
+      {fog && <div className={'node-fog' + (!loading ? ' fading' : '')}
+        onAnimationEnd={event => { if (event.target === event.currentTarget && !loading) setRevealedUrl(src) }}>
+        <GenerationSource image={item.placeholder} />
+        <GenerationFx id={item.id} paused={item.generationPhase === 'unconfirmed'} />
+        {loading && <span className="gen-pill" role="status">{stageLabel}</span>}
+      </div>}
       {(failed || loadFailed) && <div className="generation-failure nodrag nopan nowheel" role="status">
         <Icon name="alert" size={20} />
         <div className="gen-fail-head">
@@ -85,21 +90,14 @@ function ImageNodeImpl({ data, selected }: NodeProps<ImageNodeType>) {
             event.stopPropagation()
             if (!item.toolRunId || retrying) return
             setRetrying(true)
-            try { await onRetry(item.toolRunId) }
+            try { await onRetry(item.toolRunId, item) }
             catch (error) { toast(error instanceof Error ? error.message : '重试提交未能确认，请查询原任务') }
             finally { setRetrying(false) }
           }}><Icon name="retry" size={12} />{retrying ? '提交中' : '重试'}</button>
             : <small>请在对话中查看处理建议（未扣费）</small>}
       </div>}
+      {item.agentOrigin && item.agentOrigin.attemptNumber > 1 && <span className="agent-retry-origin">原任务第 {item.agentOrigin.slotIndex} 张 · 第 {item.agentOrigin.attemptNumber} 次尝试</span>}
       {selected && multi && <b className="ck"><Icon name="check" size={11} /></b>}
-      {selected && !multi && (
-        <>
-          <i className="hdl" style={{ left: -3.25, top: -3.25 }} />
-          <i className="hdl" style={{ right: -3.25, top: -3.25 }} />
-          <i className="hdl" style={{ left: -3.25, bottom: -3.25 }} />
-          <i className="hdl" style={{ right: -3.25, bottom: -3.25 }} />
-        </>
-      )}
       {overlay?.kind === 'frame-out' && (
         <i className="ov-out" style={frameOut(item.image.width / item.image.height, overlay.ratio)}>
           <span>{ratioLabel(overlay.ratio)}</span>
@@ -110,6 +108,7 @@ function ImageNodeImpl({ data, selected }: NodeProps<ImageNodeType>) {
   )
 }
 
+/** 多卡错相：按 item.id 哈希出 0–3.8s 的负延迟，同批占位的柔光不同步。 */
 const ratioLabel = (r: number) => ({ 1: '1:1', 0.75: '3:4', 1.3333: '4:3', 0.5625: '9:16', 1.7778: '16:9' } as Record<number, string>)[Math.round(r * 10000) / 10000] ?? ''
 
 /** 扩图目标框：包住原图，按目标比例向外扩 */

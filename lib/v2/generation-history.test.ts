@@ -11,8 +11,9 @@ test('mock provides three calendar groups, pagination, favorite/removal and comp
   assert.ok(groupGenerationDays(all).every(group => group.records.length > 1))
   const page = await ds.listGenerationPage({ limit: 2, sort: 'oldest' })
   assert.equal(page.generations.length, 2); assert.equal(page.total, all.length)
-  const g = all[0]
-  assert.ok((await ds.getGeneration(g.id))!.siblings.length > 1)
+  const g = all.find(record => record.id === 'g_m1')
+  assert.ok(g)
+  assert.equal((await ds.getGeneration(g.id))!.siblings.length, 4)
   await ds.setGenerationFavorite([g.id], true)
   assert.equal((await ds.listGenerationPage({ favorite: true })).total, 1)
   await ds.deleteGenerations([g.id])

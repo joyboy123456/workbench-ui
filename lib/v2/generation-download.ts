@@ -1,4 +1,5 @@
 import type { GenerationDetail } from './generation-history'
+import { exportImageUrl } from './export-source'
 
 /** ZIP store mode: one download, no browser multi-download permission or new dependency. */
 export function zipImages(files: { name: string; bytes: Uint8Array }[]): Blob {
@@ -40,14 +41,16 @@ export async function downloadGenerationArchive(ids: string[], get: (id: string)
   for (const id of [...new Set(ids)]) {
     const detail = await get(id)
     if (!detail || detail.generation.status !== 'done') throw new Error('部分记录已不可用，请刷新后重试')
-    const response = await fetch(detail.generation.image.url, { credentials: 'include' })
-    if (!response.ok) throw new Error('图片下载失败，请稍后重试')
+    const video = detail.generation.video
+    const url = video ? (video.url.startsWith('/api/') ? `${video.url}?download=1` : video.url) : exportImageUrl(detail.generation.image)
+    const response = await fetch(url, { credentials: 'include', redirect: 'error', signal: AbortSignal.timeout(video ? 120000 : 30000) })
+    if (!response.ok) throw new Error(video ? '视频下载失败，请稍后重试' : '图片下载失败，请稍后重试')
     const blob = await response.blob()
-    const extension: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif', 'image/gif': 'gif' }
+    const extension: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif', 'image/gif': 'gif', 'video/mp4': 'mp4' }
     const ext = extension[blob.type.split(';')[0]]
     if (!ext) throw new Error('下载内容不是支持的图片')
     size += blob.size
-    if (size > 100 * 1024 * 1024) throw new Error('本次图片超过 100MB，请减少选择数量')
+    if (size > 100 * 1024 * 1024) throw new Error('本次文件超过 100MB，请减少选择数量')
     files.push({ name: `${files.length + 1}-${id.replace(/[^a-zA-Z0-9_-]/g, '_')}.${ext}`, bytes: new Uint8Array(await blob.arrayBuffer()) })
   }
   return zipImages(files)

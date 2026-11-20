@@ -8,6 +8,8 @@ export interface ToolRunView {
   status: 'running' | 'done' | 'failed' | 'unconfirmed'
   items: CanvasItem[]
   message: AssistantMessage
+  referencePlan?: string
+  droppedReferenceIds?: string[]
   error?: string
   retryAllowed: boolean
   createdAt: string

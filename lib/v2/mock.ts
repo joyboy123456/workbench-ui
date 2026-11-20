@@ -1,4 +1,7 @@
-import { filterGenerations, generationDetail } from './generation-history'
+import { POSE_OPTIONS } from './pose-options'
+import { mergeChatMessage } from './chat-messages'
+import { filterGenerations, generationDetail, replayParameters } from './generation-history'
+import { mockToolGeneration, mockToolReplaySchema, type MockToolReplay } from './mock-tool-history'
 import { downloadGenerationArchive } from './generation-download'
 /**
  * V2 的本地 mock 数据源。接线时换成调用后端的实现，保持 V2DataSource 接口不变即可。
@@ -6,28 +9,23 @@ import { downloadGenerationArchive } from './generation-download'
  */
 import { createStressCanvas } from './mock-canvas'
 import { composerOptions } from './composer-options'
+import { normalizeVideoGeneration, videoSize, VIDEO_MODEL_NAME } from './video-options'
 import type {
-  Account, ActiveTask, AgentMode, AskMessage, AssistantMessage, BrandKit, CanvasItem, CaseExample, ChatAttachment, ChatMessage,
-  FashionModel, Generation, ImageRef, Material, Product, ProductCategory, Project, ToolCatalogItem, ToolCategoryId, ToolCover, ToolDef, ToolField, ToolParams,
+  Account, ActiveTask, AgentMode, AskMessage, AssistantMessage, BrandKit, CanvasItem, CaseExample, CasePage, CaseQuery, ChatAttachment, ChatMessage,
+  FashionModel, Generation, ImageRef, Material, MaterialCategory, Product, ProductCategory, Project, PromptPreset, ToolCatalogItem, ToolCategoryId, ToolCover, ToolDef, ToolField, ToolParams,
 } from './types'
-import type { AgentEvent, ProductQuery, GenerationQuery, V2DataSource } from './data-source'
+import type { AgentEvent, ProductQuery, MaterialQuery, GenerationQuery, V2DataSource } from './data-source'
 import { placeResults } from './arrange'
 import { referenceParents } from './provenance'
-import { canvasItemsSchema, chatMessagesSchema } from './project-schema'
+import { canvasItemSchema, chatMessageSchema } from './project-schema'
+import { createMockImages, localSaveError, type MockBlobStore } from './mock-images'
 import { z } from 'zod'
 import { generationTarget, mergeGenerationItem } from './generation-progress'
-import type { V2SessionSource, V2SessionUser } from './session'
+import type { V2SessionUser } from './session'
+import { readCanvasImage } from './read-canvas-image'
+import { isHiddenClothingTool } from '../clothing-tool-catalog'
 
-/** 纯前端仓库不接账号：始终以演示用户身份进入。 */
 const DEMO_USER: V2SessionUser = { id: 'demo', username: 'demo', displayName: '演示用户' }
-function mockSession(): V2SessionSource {
-  return {
-    async getSession() { return DEMO_USER },
-    async login() { return DEMO_USER },
-    async register() { return DEMO_USER },
-  }
-}
-
 const M = '/v2-mock/'
 let seq = 0
 const uid = (p: string) => `${p}_${Date.now().toString(36)}${(seq++).toString(36)}`
@@ -81,11 +79,20 @@ const brandKits: BrandKit[] = [
   { id: 'b_main', name: '店铺品牌（占位）', colors: ['#2B211B', '#C9A27A', '#F3EDE4', '#8A4B2F'], fonts: ['思源宋体', '思源黑体'], references: [img('k-80232-s1.jpg', 1100, 1469), img('k-banner01.jpg', 1100, 516)], guidance: '暖调、自然光，留白多，标题用宋体。' },
 ]
 
+const materialCategories: MaterialCategory[] = [
+  { id: 'mc_scene', name: '场景参考', count: 2, createdAt: daysAgo(8) },
+  { id: 'mc_style', name: '风格灵感', count: 1, createdAt: daysAgo(7) },
+]
+
 const materials: Material[] = [
-  { id: 'mt_1', name: '草原外景参考', image: img('k-banner01.jpg', 1100, 516), origin: 'saved', createdAt: daysAgo(1) },
-  { id: 'mt_2', name: '室内书房参考', image: img('c1.jpg', 640, 857), origin: 'upload', createdAt: daysAgo(3) },
+  { id: 'mt_1', name: '草原外景参考', image: img('k-banner01.jpg', 1100, 516), origin: 'saved', categoryId: 'mc_scene', createdAt: daysAgo(1) },
+  { id: 'mt_2', name: '室内书房参考', image: img('c1.jpg', 640, 857), origin: 'upload', categoryId: 'mc_scene', createdAt: daysAgo(3) },
   { id: 'mt_3', name: '湖边餐桌参考', image: img('c2.jpg', 640, 857), origin: 'upload', createdAt: daysAgo(3) },
-  { id: 'mt_4', name: '街拍参考', image: img('c4.jpg', 640, 954), origin: 'clip', createdAt: daysAgo(5) },
+  { id: 'mt_4', name: '街拍参考', image: img('c4.jpg', 640, 954), origin: 'clip', categoryId: 'mc_style', createdAt: daysAgo(5) },
+]
+
+const promptPresets: PromptPreset[] = [
+  { id: 'pp_main', name: '电商主图', content: '保留商品版型、材质和细节，生成干净高级的电商主图。', createdAt: daysAgo(4), updatedAt: daysAgo(4) },
 ]
 
 const G = (id: string, projectId: string, f: ImageRef, kind: Generation['kind'], d: number, extra: Partial<Generation> = {}): Generation =>
@@ -101,10 +108,14 @@ const generations: Generation[] = [
   G('g_d2', 'pj_west', img('k-80232-s2.jpg', 1100, 1469), 'detail', 0, { parentId: 'ci_g_m1', toolId: 'detail-page', params: { screens: '3', prompt: '保留商品细节，以自然光展示。' } }),
   G('g_d3', 'pj_west', img('k-80232-s3.jpg', 1100, 1469), 'detail', 0, { parentId: 'ci_g_m1', toolId: 'detail-page', params: { screens: '3', prompt: '保留商品细节，以自然光展示。' } }),
   G('g_bn', 'pj_west', img('k-banner01.jpg', 1100, 516), 'banner', 1),
+  G('g_v1', 'pj_west', { id: 'g_v1', url: M + 'video-poster.jpg', width: 1280, height: 720 }, 'video', 0, {
+    prompt: '草原黄昏光里模特转身，裙摆随风飘起。', ratio: '跟随原图', resolution: '1280×720', outputCount: 1,
+    modelName: 'Grok Imagine Video', video: { url: M + 'video-demo.mp4', duration: 6, width: 1280, height: 720 },
+  }),
   ...[1, 2, 3, 4, 5, 6].map((i) => G(`g_t${i}`, 'pj_tweed', img(`c${[1, 2, 6, 8, 10, 12][i - 1]}.jpg`, 640, 857), 'main', 3, { productIds: ['p_tweed', 'p_chain'], modelId: 'm_a' })),
 ]
 
-const projects: Project[] = [
+const seedProjects: Project[] = [
   { id: 'pj_west', name: '秋日西部 · 蕾丝连衣裙', cover: img('k-701-look01.jpg', 1100, 1473), productIds: ['p_lace'], updatedAt: daysAgo(0, 15) },
   { id: 'pj_tweed', name: '粗花呢套装 · 上新', cover: img('c10.jpg', 640, 857), productIds: ['p_tweed', 'p_chain'], updatedAt: daysAgo(3) },
   { id: 'pj_new', name: '未命名项目', productIds: [], updatedAt: daysAgo(5) },
@@ -131,7 +142,7 @@ function layoutRows(rows: Generation[][]): CanvasItem[] {
   return out
 }
 
-const canvasByProject: Record<string, CanvasItem[]> = {
+const seedCanvasByProject: Record<string, CanvasItem[]> = {
   pj_west: (() => {
     const g = (id: string) => generations.find((x) => x.id === id)!
     const items = layoutRows([
@@ -148,7 +159,7 @@ const canvasByProject: Record<string, CanvasItem[]> = {
 
 const att = (kind: ChatAttachment['kind'], id: string, label: string, image: ImageRef): ChatAttachment => ({ kind, id, label, image })
 
-const messagesByProject: Record<string, ChatMessage[]> = {
+const seedMessagesByProject: Record<string, ChatMessage[]> = {
   pj_west: [
     { id: 'u1', role: 'user', createdAt: daysAgo(0, 14), text: '这套出 4 张草原主图，模特用林夕，蕾丝领口和流苏腰带要保留。',
       attachments: [att('product', 'p_lace', '蕾丝荷叶领连衣裙', products[0].images[0]), att('model', 'm_linxi', '林夕', models[0].cover)] },
@@ -220,6 +231,14 @@ const messagesByProject: Record<string, ChatMessage[]> = {
         { key: 'C', label: '室内复古书房', description: '木质书架与暖色台灯，营造秋日松弛氛围' },
       ],
       otherPlaceholder: '描述你想要的其他场景、光线或模特要求…',
+      questions: [
+        { question: '这组粗花呢套装主图希望用哪种场景风格？', mode: 'single', options: [
+          { key: 'A', label: '法式街拍外景' }, { key: 'B', label: '极简影棚纯色底' }, { key: 'C', label: '室内复古书房' }], otherPlaceholder: '其它场景' },
+        { question: '模特形象按哪种来？', mode: 'single', options: [
+          { key: 'A', label: '亚洲女性，25–30 岁' }, { key: 'B', label: '欧美女性，25–30 岁' }, { key: 'C', label: '亚洲女性，35–40 岁' }], otherPlaceholder: '其它（年龄/人种）' },
+        { question: '需要哪些画面？', mode: 'multiple', options: [
+          { key: 'A', label: '全身正面' }, { key: 'B', label: '半身细节' }, { key: 'C', label: '面料特写' }], otherPlaceholder: '其它画面' },
+      ],
     },
   ],
   pj_new: [],
@@ -247,7 +266,7 @@ export const TOOLS: ToolDef[] = [
       { id: 'ref', label: '参考图', kind: 'ref', optional: true },
       { id: 'n', label: '张数', kind: 'segment', options: [{ id: '1', label: '1' }, { id: '2', label: '2' }], default: '2', count: true },
     ] },
-  { id: 'erase', name: '智能消除', surfaces: ['selection', 'slash'], icon: 'erase', backendToolId: 80243, overlay: 'mask', cost: 2,
+  { id: 'erase', name: '智能消除', surfaces: ['selection', 'slash'], icon: 'erase', backendToolId: 80248, overlay: 'mask', cost: 2,
     tip: '涂掉要去除的东西（水印、杂物、路人），背景自动补齐。',
     fields: [{ id: 'brush', label: '画笔', kind: 'slider', min: 6, max: 60, default: 28 }] },
   { id: 'cutout', name: '一键抠图', surfaces: ['selection', 'batch', 'home', 'slash'], icon: 'cut', backendToolId: 80244, cost: 1 },
@@ -255,8 +274,7 @@ export const TOOLS: ToolDef[] = [
     tip: '人物、服装和背景不变，只换姿势。每选一个姿势出一张。',
     fields: [
       { id: 'poses', label: '姿势', kind: 'chips', multi: true, count: true, default: ['walk', 'side'],
-        options: [{ id: 'stand', label: '正面站立' }, { id: 'walk', label: '走动' }, { id: 'side', label: '侧身' }, { id: 'back', label: '回头' },
-          { id: 'sit', label: '坐姿' }, { id: 'lean', label: '倚靠' }, { id: 'hip', label: '叉腰' }, { id: 'pocket', label: '手插兜' }] },
+        options: [...POSE_OPTIONS] },
       { id: 'prompt', label: '补充', kind: 'text', optional: true, placeholder: '如：手里拿着包' },
     ] },
   { id: 'swap-bg', name: '换背景', surfaces: ['selection', 'batch', 'slash'], icon: 'cover', backendToolId: 702, cost: 4,
@@ -341,6 +359,68 @@ export const TOOLS: ToolDef[] = [
   { id: 'white-bg', name: '白底图', surfaces: ['home', 'slash'], icon: 'cover', backendToolId: 707 },
 ]
 
+/** mock 案例（无后端时首页案例区用） */
+function mockCases(): CaseExample[] {
+  const meta: Array<{ title: string; category: CaseExample['category']; aspect: CaseExample['aspect']; inputHint: string[] }> = [
+    { title: '秋日草原复古西装大片', category: 'model', aspect: 'tall', inputHint: ['服装商品图', '模特参考图（可选）'] },
+    { title: '极简棚拍针织连衣裙', category: 'model', aspect: 'square', inputHint: ['服装商品图'] },
+    { title: '法式庄园蕾丝度假裙', category: 'style', aspect: 'tall', inputHint: ['服装商品图'] },
+    { title: '丹宁牛仔马甲叠穿主图', category: 'main', aspect: 'wide', inputHint: ['服装商品图'] },
+    { title: '木珠流苏腰带细节详情页', category: 'detail', aspect: 'tall', inputHint: ['产品图'] },
+    { title: '蕾丝荷叶领卖点拆解图', category: 'detail', aspect: 'square', inputHint: ['产品图'] },
+    { title: '都市通勤风衣街拍LOOK', category: 'model', aspect: 'tall', inputHint: ['服装商品图'] },
+    { title: '静物配饰极简光影主图', category: 'main', aspect: 'wide', inputHint: ['商品图'] },
+    { title: '设计师买手店橱窗氛围', category: 'style', aspect: 'square', inputHint: ['服装商品图'] },
+    { title: '夏季清凉亚麻套装穿搭', category: 'model', aspect: 'tall', inputHint: ['服装商品图'] },
+    { title: '电商大促首图视觉套版', category: 'detail', aspect: 'wide', inputHint: ['产品图'] },
+    { title: '复古胶片感人像Lookbook', category: 'style', aspect: 'tall', inputHint: ['服装商品图'] },
+  ]
+  return meta.map((m, k) => ({
+    id: `case${k + 1}`,
+    title: m.title,
+    category: m.category,
+    aspect: m.aspect,
+    keyword: `做同款：${m.title}`,
+    inputHint: m.inputHint,
+    image: { id: `case${k + 1}`, url: `/v2-mock/c${k + 1}.jpg`, width: 640, height: 857 },
+  }))
+}
+
+const MOCK_CASE_TOOLS: Record<NonNullable<CaseExample['category']>, { id: string; name: string }> = {
+  model: { id: '701', name: 'AI商品主图（服装大片）' },
+  main: { id: '705', name: '服装主图裂变' },
+  detail: { id: '80232', name: 'AI商品详情页' },
+  style: { id: '80213', name: '参考改款' },
+  retouch: { id: '80242', name: '高清放大' },
+  fabric: { id: '80301', name: '面料花型提取' },
+}
+
+function mockCasePage(q: CaseQuery): CasePage {
+  const all = mockCases().map((c) => {
+    const tool = MOCK_CASE_TOOLS[c.category ?? 'model']
+    return { ...c, toolId: tool.id, toolName: tool.name }
+  })
+  const filtered = all.filter((c) => (!q.category || c.category === q.category) && (!q.toolId || c.toolId === q.toolId))
+  const offset = Math.max(0, q.offset ?? 0)
+  const limit = Math.max(0, Math.min(60, q.limit ?? 24))
+  const cases = filtered.slice(offset, offset + limit)
+  const next = offset + cases.length
+  const categoryIds = [...new Set(all.map((c) => c.category ?? 'model'))]
+  const tools = new Map<string, { id: string; name: string; count: number }>()
+  for (const c of all) {
+    if (q.category && c.category !== q.category) continue
+    const hit = tools.get(c.toolId) ?? { id: c.toolId, name: c.toolName, count: 0 }
+    hit.count++
+    tools.set(c.toolId, hit)
+  }
+  return {
+    cases,
+    total: filtered.length,
+    nextOffset: limit > 0 && next < filtered.length ? next : null,
+    facets: { categories: categoryIds.map((id) => ({ id, count: all.filter((c) => (c.category ?? 'model') === id).length })), tools: [...tools.values()] },
+  }
+}
+
 /** Agent 首轮回复时按规则生成简短项目标题（纯前端 mock 模拟） */
 export function summarizeProjectTitle(text: string, attachments: ChatAttachment[], mode: AgentMode): string {
   const cleanLabel = (label: string) => label.replace(/[（(]占位[)）]/g, '').trim()
@@ -396,36 +476,102 @@ export function toolCount(def: ToolDef | undefined, params: Record<string, unkno
 
 /* ---------------- 实现 ---------------- */
 
-const mockSnapshotSchema = z.array(z.object({
-  project: z.object({ id: z.string(), name: z.string(), productIds: z.array(z.string()), updatedAt: z.string(), coverItemId: z.string().optional(), cover: z.object({ id: z.string(), url: z.string(), width: z.number(), height: z.number(), thumbUrl: z.string().optional() }).optional() }),
-  items: canvasItemsSchema, messages: chatMessagesSchema,
-}))
+const mockProjectSchema = z.object({
+  id: z.string().min(1), name: z.string().min(1), productIds: z.array(z.string()), updatedAt: z.string().datetime(),
+  coverItemId: z.string().optional(), cover: z.object({ id: z.string(), url: z.string(), width: z.number(), height: z.number(), thumbUrl: z.string().optional() }).optional(),
+})
 const MOCK_PROJECTS_KEY = 'v2:mock-projects:v1'
+const MOCK_DELETED_PROJECTS_KEY = 'v2:mock-deleted-projects:v1'
 
-export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem' | 'setItem'>; pause?: (ms: number) => Promise<void>; failOutputIndex?: number } = {}): V2DataSource {
+export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem' | 'setItem'>; images?: MockBlobStore; pause?: (ms: number) => Promise<void>; failOutputIndex?: number } = {}): V2DataSource {
+  let demoUser: V2SessionUser | null = DEMO_USER
+  const projects = structuredClone(seedProjects)
+  const canvasByProject = structuredClone(seedCanvasByProject)
+  const messagesByProject = structuredClone(seedMessagesByProject)
+  const images = createMockImages(options.images)
   const pause = options.pause ?? wait
   const storage = () => options.storage ?? (typeof window === 'undefined' ? undefined : window.localStorage)
+  const toolReplays = new Map<string, MockToolReplay>()
+  const deletedProjects = new Set<string>()
+  let hydration: Promise<void> | undefined
   let hydrated = false
+  const record = (location: string) => console.warn('[v2:mock-recovery] 已跳过损坏数据：' + location)
+  async function entries<T extends { id: string }>(value: unknown, schema: z.ZodType<T, z.ZodTypeDef, unknown>, location: string): Promise<T[]> {
+    if (!Array.isArray(value)) { record(location); return [] }
+    const accepted: T[] = []
+    const seen = new Set<string>()
+    for (const [index, entry] of value.entries()) {
+      try {
+        const parsed = schema.parse(await images.prepare(entry))
+        if (seen.has(parsed.id)) throw new Error('重复 ID')
+        accepted.push(await images.restore(parsed)); seen.add(parsed.id)
+      } catch { record(`${location}[${index}]`) }
+    }
+    return accepted
+  }
   function hydrate() {
-    if (hydrated) return
-    hydrated = true
-    try {
-      const raw = storage()?.getItem(MOCK_PROJECTS_KEY)
-      if (!raw) return
-      for (const doc of mockSnapshotSchema.parse(JSON.parse(raw))) {
-        const index = projects.findIndex(project => project.id === doc.project.id)
-        if (index < 0) projects.unshift(doc.project)
-        else projects[index] = doc.project
-        canvasByProject[doc.project.id] = doc.items.map(item => item.status === 'running'
-          ? { ...item, status: 'failed', errorMessage: '演示生成已中断，来源与位置已保留', retryAllowed: false } : item)
-        messagesByProject[doc.project.id] = doc.messages
+    hydration ??= (async () => {
+      const deleted = storage()?.getItem(MOCK_DELETED_PROJECTS_KEY)
+      if (deleted) {
+        const ids = z.array(z.string()).parse(JSON.parse(deleted))
+        for (const id of ids) deletedProjects.add(id)
+        for (let index = projects.length - 1; index >= 0; index--) {
+          if (deletedProjects.has(projects[index].id)) projects.splice(index, 1)
+        }
       }
-    } catch { /* A stale local demo snapshot must not prevent opening the demo. */ }
+      let raw: string | null | undefined
+      try { raw = storage()?.getItem(MOCK_PROJECTS_KEY) } catch (error) { throw localSaveError(error) }
+      if (!raw) return
+      let docs: unknown
+      try { docs = JSON.parse(raw) } catch { throw new Error('本地项目快照损坏，未覆盖原始数据') }
+      if (!Array.isArray(docs)) throw new Error('本地项目快照格式错误，未覆盖原始数据')
+      const seen = new Set<string>()
+      for (const [index, value] of docs.entries()) {
+        const doc = z.object({ project: z.unknown(), items: z.unknown(), messages: z.unknown(), toolReplays: z.unknown().optional() }).safeParse(value)
+        if (!doc.success) { record(`项目[${index}]`); continue }
+        const parsed = mockProjectSchema.safeParse(doc.data.project)
+        if (!parsed.success || seen.has(parsed.data.id)) { record(`项目[${index}]`); continue }
+        const project = parsed.data
+        if (deletedProjects.has(project.id)) continue
+        seen.add(project.id)
+        if (project.cover) {
+          try { project.cover = await images.restore(await images.prepare(project.cover) as typeof project.cover) }
+          catch { delete project.cover; delete project.coverItemId; record(`项目[${index}].cover`) }
+        }
+        const at = projects.findIndex(existing => existing.id === project.id)
+        if (at < 0) projects.unshift(project)
+        else projects[at] = project
+        canvasByProject[project.id] = (await entries(doc.data.items, canvasItemSchema, `${project.id}.items`)).map(item => item.status === 'running'
+          ? { ...item, status: 'failed', errorMessage: '演示生成已中断，来源与位置已保留', retryAllowed: false } : item)
+        messagesByProject[project.id] = await entries(doc.data.messages, chatMessageSchema, `${project.id}.messages`)
+        for (const replay of await entries(doc.data.toolReplays ?? [], mockToolReplaySchema, `${project.id}.toolReplays`)) toolReplays.set(replay.id, replay)
+        // Canvas snapshots already contain the run identity and frozen output
+        // images. Restore retry lookup too; otherwise a visible retry silently
+        // does nothing after refreshing a failed batch.
+        for (const item of canvasByProject[project.id]) {
+          if (!item.toolRunId) continue
+          let run = runs.get(item.toolRunId)
+          if (!run) {
+            const message = messagesByProject[project.id].find((message): message is AssistantMessage =>
+              message.role === 'assistant' && message.steps.some(step => step.itemId === item.id))
+            if (!message) continue
+            run = { projectId: project.id, items: [], message: structuredClone(message) }
+            runs.set(item.toolRunId, run)
+          }
+          run.items.push(structuredClone(item))
+        }
+      }
+    })().then(() => { hydrated = true })
+    return hydration
   }
   function persist() {
-    storage()?.setItem(MOCK_PROJECTS_KEY, JSON.stringify(projects.map(project => ({
-      project, items: canvasByProject[project.id] ?? [], messages: messagesByProject[project.id] ?? [],
-    }))))
+    try {
+      storage()?.setItem(MOCK_DELETED_PROJECTS_KEY, JSON.stringify([...deletedProjects]))
+      storage()?.setItem(MOCK_PROJECTS_KEY, images.stringify(projects.map(project => ({
+        project, items: canvasByProject[project.id] ?? [], messages: messagesByProject[project.id] ?? [],
+        toolReplays: [...toolReplays.values()].filter(replay => replay.projectId === project.id),
+      }))))
+    } catch (error) { throw localSaveError(error) }
   }
   const runs = new Map<string, { projectId: string; items: CanvasItem[]; message: AssistantMessage }>()
   const retrying = new Set<string>()
@@ -442,7 +588,6 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
           projectName: pName,
           title: run.message.steps.find(s => s.itemId === item.id)?.label ?? '图片生成中',
           phase: item.generationPhase ?? 'queued',
-          progress: item.progress ?? 0,
           thumbUrl: item.placeholder?.thumbUrl ?? item.placeholder?.url,
           ratio: item.targetSize ? `${item.targetSize.width}:${item.targetSize.height}` : undefined,
           startedAt: item.startedAt ?? nowIso(),
@@ -457,7 +602,6 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
           projectName: '秋日西部 · 蕾丝连衣裙',
           title: 'AI 商品主图 · 第 1 张',
           phase: 'generating',
-          progress: 64,
           thumbUrl: M + 'k-701-look01.jpg',
           ratio: '3:4',
           startedAt: nowIso(),
@@ -468,7 +612,6 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
           projectName: '粗花呢套装 · 上新',
           title: 'AI 电商套图 · 第 2 张',
           phase: 'queued',
-          progress: 12,
           thumbUrl: M + 'c10r1.jpg',
           ratio: '3:4',
           startedAt: nowIso(),
@@ -486,8 +629,15 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
   const account: Account = { name: '店铺账号（占位）', avatar: M + 'c7.jpg', credits: 39 }
 
   const historyPreferences = new Map<string, { favorite?: boolean; hidden?: boolean }>()
-  const historyRecords = () => generations.filter(g => g.status === 'done' && !historyPreferences.get(g.id)?.hidden).map(g => ({ ...g, favorite: historyPreferences.get(g.id)?.favorite ?? false }))
-  const getHistory = async (id: string) => generationDetail(historyRecords(), id)
+  const historyRecords = async () => {
+    await hydrate()
+    const current = [...toolReplays.values()].flatMap(replay => {
+      const item = projectCanvas(replay.projectId).find(item => item.ref.type === 'generation' && item.ref.id === replay.id)
+      return item ? [mockToolGeneration(item, replay, projects.find(project => project.id === replay.projectId)?.productIds ?? [])] : []
+    })
+    return [...current, ...generations].filter(g => g.status === 'done' && !historyPreferences.get(g.id)?.hidden).map(g => ({ ...g, favorite: historyPreferences.get(g.id)?.favorite ?? false }))
+  }
+  const getHistory = async (id: string) => generationDetail(await historyRecords(), id)
 
   const stressCanvases = new Map<string, CanvasItem[]>()
   const stressEnabled = () => process.env.NODE_ENV === 'development' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mockNodes') === '300'
@@ -503,55 +653,50 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
   const withCounts = () => categories.map((c) => ({ ...c, count: products.filter((p) => p.categoryId === c.id).length }))
 
   return {
-    ...mockSession(),
+    async getSession() { return demoUser },
+    async login() { demoUser = DEMO_USER; return demoUser },
+    async register() { demoUser = DEMO_USER; return demoUser },
+    async logout() { demoUser = null },
     async getAccount() { return account },
     async getComposerOptions() { return composerOptions() },
     async getComposerReferences() { return { models, brandKits } },
-    async listTools() { return TOOLS },
+    async listTools() { return TOOLS.filter(tool => tool.backendToolId === undefined || !isHiddenClothingTool(tool.backendToolId)) },
+    readCanvasImage,
     async listToolCatalog() { return TOOL_CATALOG },
-    async listCases() {
-      const meta: Array<{ title: string; category: CaseExample['category']; aspect: CaseExample['aspect']; prompt: string }> = [
-        { title: '秋日草原复古西装大片', category: 'model', aspect: 'tall', prompt: '秋日草原户外阳光，复古西装外套搭配半身裙，胶片质感街拍' },
-        { title: '极简棚拍针织连衣裙', category: 'model', aspect: 'square', prompt: '纯色高级灰棚拍，柔和侧逆光，凸显针织肌理与垂坠感' },
-        { title: '法式庄园蕾丝度假裙', category: 'style', aspect: 'tall', prompt: '法式庄园午后自然光，蕾丝连衣裙随风微动，氛围感大片' },
-        { title: '丹宁牛仔马甲叠穿主图', category: 'main', aspect: 'wide', prompt: '电商主图构图，牛仔马甲叠穿连衣裙，户外木栅栏背景' },
-        { title: '木珠流苏腰带细节详情页', category: 'detail', aspect: 'tall', prompt: '服饰配饰详情页海报，突出木珠流苏腰带材质与卖点排版' },
-        { title: '蕾丝荷叶领卖点拆解图', category: 'detail', aspect: 'square', prompt: '商品详情页卖点展示，领口蕾丝花边特写与柔和暖调排版' },
-        { title: '都市通勤风衣街拍LOOK', category: 'model', aspect: 'tall', prompt: '城市街头清晨光影，卡其色风衣通勤穿搭，自然抓拍感' },
-        { title: '静物配饰极简光影主图', category: 'main', aspect: 'wide', prompt: '高质感商品静物主图，立体光影对比，干净留白构图' },
-        { title: '设计师买手店橱窗氛围', category: 'style', aspect: 'square', prompt: '极简买手店陈列氛围，暖白建筑光影，高级时尚杂志感' },
-        { title: '夏季清凉亚麻套装穿搭', category: 'model', aspect: 'tall', prompt: '夏日海边微风，浅色亚麻套装自然松弛感穿搭' },
-        { title: '电商大促首图视觉套版', category: 'detail', aspect: 'wide', prompt: '电商活动主视觉套版，商品居中突出，简洁促销信息层级' },
-        { title: '复古胶片感人像Lookbook', category: 'style', aspect: 'tall', prompt: '柯达胶片色调，室内窗边自然光，人物特写与服饰质感' },
-      ]
-      return meta.map((m, k) => ({
-        id: `case${k + 1}`,
-        title: m.title,
-        category: m.category,
-        aspect: m.aspect,
-        prompt: m.prompt,
-        image: { id: `case${k + 1}`, url: `/v2-mock/c${k + 1}.jpg`, width: 640, height: 857 },
-      }))
-    },
+    async listCases() { return mockCases().slice(0, 12) },
+    async listCasePage(q = {}) { return mockCasePage(q) },
+    async listFeaturedCases() { return mockCases().filter((c) => c.aspect === 'tall').slice(0, 5) },
 
-    async listProjects() { hydrate(); return [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) },
+    async listProjects() { await hydrate(); return [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) },
     async getProject(id) {
-      hydrate()
+      await hydrate()
       const project = projects.find((p) => p.id === id)
       if (!project) return null
       return { project, items: structuredClone(projectCanvas(id)), messages: structuredClone(messagesByProject[id] ?? []) }
     },
     async createProject(input) {
-      hydrate()
+      await hydrate()
       const p: Project = { id: uid('pj'), name: input.name || '未命名项目', productIds: input.productIds ?? [], updatedAt: nowIso() }
-      projects.unshift(p); canvasByProject[p.id] = []; messagesByProject[p.id] = []
+      projects.unshift(p); canvasByProject[p.id] = []; messagesByProject[p.id] = input.firstMessage ? [structuredClone(input.firstMessage)] : []
       for (const pid of p.productIds) products.find((x) => x.id === pid)?.projectIds.push(p.id)
       persist(); return p
     },
-    async renameProject(id, name) { hydrate(); const p = projects.find((x) => x.id === id); if (p) p.name = name; persist() },
+    async renameProject(id, name) { await hydrate(); const p = projects.find((x) => x.id === id); if (p) { p.name = name; p.updatedAt = nowIso() }; persist() },
+    async deleteProject(id) {
+      await hydrate()
+      const index = projects.findIndex(project => project.id === id)
+      if (index < 0) throw new Error('项目不存在')
+      projects.splice(index, 1)
+      deletedProjects.add(id)
+      delete canvasByProject[id]; delete messagesByProject[id]; stressCanvases.delete(id)
+      for (const product of products) product.projectIds = product.projectIds.filter(projectId => projectId !== id)
+      persist()
+    },
     async saveCanvas(projectId, items, messages) {
-      hydrate()
+      await hydrate()
+      if (deletedProjects.has(projectId)) return
       if (stressEnabled()) { stressCanvases.set(projectId, structuredClone(items)); return }
+      await images.prepare({ items, messages })
       canvasByProject[projectId] = structuredClone(items)
       if (messages !== undefined) messagesByProject[projectId] = structuredClone(messages)
       const project = projects.find(value => value.id === projectId)
@@ -563,8 +708,56 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
       }
       persist()
     },
+    async patchCurtain(projectId, patch) {
+      await hydrate()
+      if (deletedProjects.has(projectId)) return
+      let next = structuredClone(projectCanvas(projectId))
+      if (patch.removeIds?.length) {
+        const drop = new Set(patch.removeIds)
+        next = next.filter(item => !drop.has(item.id))
+      }
+      if (patch.upsert?.length) {
+        if (!stressEnabled()) await images.prepare({ items: patch.upsert })
+        for (const item of patch.upsert) {
+          const cloned = structuredClone(item)
+          const index = next.findIndex(existing => existing.id === cloned.id)
+          if (index >= 0) next[index] = cloned
+          else next.push(cloned)
+        }
+      }
+      if (patch.orderIds?.length) {
+        const byId = new Map(next.map(item => [item.id, item]))
+        const ordered: CanvasItem[] = []
+        const placed = new Set<string>()
+        for (const itemId of patch.orderIds) {
+          const item = byId.get(itemId)
+          if (item && !placed.has(itemId)) { ordered.push(item); placed.add(itemId) }
+        }
+        for (const item of next) if (!placed.has(item.id)) ordered.push(item)
+        next = ordered
+      }
+      if (stressEnabled()) { stressCanvases.set(projectId, next); return }
+      canvasByProject[projectId] = next
+      const project = projects.find(value => value.id === projectId)
+      if (project) {
+        project.updatedAt = nowIso()
+        const chosen = project.coverItemId ? next.find(item => item.id === project.coverItemId && item.status !== 'running' && item.status !== 'failed') : undefined
+        if (chosen) project.cover = chosen.image
+        else { delete project.coverItemId; project.cover = next.find(item => item.status !== 'running' && item.status !== 'failed')?.image }
+      }
+      persist()
+    },
+    async saveMessages(projectId, messages) {
+      await hydrate()
+      if (deletedProjects.has(projectId) || stressEnabled()) return
+      await images.prepare({ messages })
+      messagesByProject[projectId] = structuredClone(messages)
+      const project = projects.find(value => value.id === projectId)
+      if (project) project.updatedAt = nowIso()
+      persist()
+    },
     async setProjectCover(projectId, itemId) {
-      hydrate()
+      await hydrate()
       const project = projects.find(p => p.id === projectId)
       const item = projectCanvas(projectId).find(i => i.id === itemId && i.status !== 'running' && i.status !== 'failed' && i.image.url)
       if (!project || !item) throw new Error('图片不存在或尚未完成')
@@ -573,7 +766,7 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
       return structuredClone(project)
     },
     async saveCanvasMaterial(projectId, itemId) {
-      hydrate()
+      await hydrate()
       const item = projectCanvas(projectId).find(i => i.id === itemId && i.status !== 'running' && i.status !== 'failed' && i.image.url)
       if (!item) throw new Error('图片不存在或尚未完成')
       const existing = materials.find(m => m.image.id === item.image.id)
@@ -589,18 +782,75 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
       return products.filter((p) => (!q.categoryId || p.categoryId === q.categoryId) && (!q.search || p.name.includes(q.search)))
     },
     async getProduct(id) { return products.find((p) => p.id === id) ?? null },
+    async uploadChatAttachment(file) {
+      const image = await images.upload(file)
+      return { kind: 'upload', id: image.id, label: file.name, image }
+    },
     async uploadProduct(files, meta) {
-      const images = await Promise.all(files.map(fileToImage))
-      const p = P(uid('p'), meta.name || files[0]?.name.replace(/\.\w+$/, '') || '新商品', meta.categoryId, images, 0, [])
+      const uploadedImages = await Promise.all(files.map(file => images.upload(file)))
+      const p = P(uid('p'), meta.name || files[0]?.name.replace(/\.\w+$/, '') || '新商品', meta.categoryId, uploadedImages, 0, [])
       products.unshift(p); return p
     },
 
     async listModels() { return models },
+    async uploadModel(file) {
+      const cover = await images.upload(file)
+      models.unshift({ id: cover.id, name: file.name, source: 'custom', cover, tags: [] })
+    },
     async listBrandKits() { return brandKits },
-    async listMaterials() { return materials },
-    async uploadMaterial(file) {
-      const m: Material = { id: uid('mt'), name: file.name, image: await fileToImage(file), origin: 'upload', createdAt: nowIso() }
+    async listMaterialCategories() {
+      return materialCategories.map(category => ({ ...category, count: materials.filter(material => !material.deletedAt && material.categoryId === category.id).length }))
+    },
+    async createMaterialCategory(name) {
+      const normalized = name.trim()
+      if (!normalized) throw new Error('分类名称不能为空')
+      if (materialCategories.some(category => category.name.toLocaleLowerCase() === normalized.toLocaleLowerCase())) throw new Error('同名分类已存在')
+      const category: MaterialCategory = { id: uid('mc'), name: normalized, count: 0, createdAt: nowIso() }
+      materialCategories.push(category); return { ...category }
+    },
+    async renameMaterialCategory(id, name) {
+      const category = materialCategories.find(item => item.id === id)
+      const normalized = name.trim()
+      if (!category) throw new Error('分类不存在')
+      if (!normalized) throw new Error('分类名称不能为空')
+      if (materialCategories.some(item => item.id !== id && item.name.toLocaleLowerCase() === normalized.toLocaleLowerCase())) throw new Error('同名分类已存在')
+      category.name = normalized; return { ...category, count: materials.filter(material => !material.deletedAt && material.categoryId === id).length }
+    },
+    async deleteMaterialCategory(id) {
+      const index = materialCategories.findIndex(item => item.id === id)
+      if (index < 0) throw new Error('分类不存在')
+      materialCategories.splice(index, 1)
+      for (const material of materials) if (material.categoryId === id) delete material.categoryId
+    },
+    async listMaterials(q: MaterialQuery = {}) {
+      const search = q.search?.trim().toLocaleLowerCase()
+      return materials.filter(material => Boolean(material.deletedAt) === Boolean(q.trash)
+        && (!q.categoryId || material.categoryId === q.categoryId)
+        && (!q.uncategorized || !material.categoryId)
+        && (!search || material.name.toLocaleLowerCase().includes(search)))
+    },
+    async uploadMaterial(file, categoryId) {
+      if (categoryId && !materialCategories.some(category => category.id === categoryId)) throw new Error('分类不存在')
+      const m: Material = { id: uid('mt'), name: file.name, image: await images.upload(file), origin: 'upload', ...(categoryId ? { categoryId } : {}), createdAt: nowIso() }
       materials.unshift(m); return m
+    },
+    async moveMaterial(id, categoryId) {
+      const material = materials.find(item => item.id === id && !item.deletedAt)
+      if (!material) throw new Error('素材不存在')
+      if (categoryId && !materialCategories.some(category => category.id === categoryId)) throw new Error('分类不存在')
+      if (categoryId) material.categoryId = categoryId; else delete material.categoryId
+      return { ...material }
+    },
+    async deleteMaterial(id, permanent = false) {
+      const index = materials.findIndex(item => item.id === id)
+      if (index < 0) throw new Error('素材不存在')
+      if (permanent) { if (!materials[index].deletedAt) throw new Error('请先将素材移入回收站'); materials.splice(index, 1) }
+      else materials[index].deletedAt = nowIso()
+    },
+    async restoreMaterial(id) {
+      const material = materials.find(item => item.id === id && item.deletedAt)
+      if (!material) throw new Error('回收站中没有该素材')
+      delete material.deletedAt; return { ...material }
     },
     async saveAsMaterial(generationId) {
       const g = generations.find((x) => x.id === generationId)
@@ -608,26 +858,50 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
       const m: Material = { id: uid('mt'), name: '来自生成', image: g.image, origin: 'saved', createdAt: nowIso() }
       materials.unshift(m); return m
     },
+    async listPromptPresets() { return promptPresets.map(item => ({ ...item })) },
+    async createPromptPreset(input) {
+      const now = nowIso(); const preset: PromptPreset = { id: uid('pp'), name: input.name.trim(), content: input.content.trim(), createdAt: now, updatedAt: now }
+      if (!preset.name || !preset.content) throw new Error('名称和提示词不能为空')
+      promptPresets.unshift(preset); return { ...preset }
+    },
+    async updatePromptPreset(id, input) {
+      const preset = promptPresets.find(item => item.id === id)
+      if (!preset) throw new Error('固定提示词不存在')
+      if (!input.name.trim() || !input.content.trim()) throw new Error('名称和提示词不能为空')
+      preset.name = input.name.trim(); preset.content = input.content.trim(); preset.updatedAt = nowIso(); return { ...preset }
+    },
+    async deletePromptPreset(id) {
+      const index = promptPresets.findIndex(item => item.id === id)
+      if (index < 0) throw new Error('固定提示词不存在')
+      promptPresets.splice(index, 1)
+    },
+    async optimizePrompt(text) {
+      const normalized = text.trim()
+      if (!normalized) throw new Error('请先输入提示词')
+      return { prompt: `${normalized}。明确商品主体、版型与材质细节；使用专业电商摄影构图、自然准确的光影和干净背景；画面真实，避免文字、商标与无关物体。` }
+    },
 
-    async listGenerations(q: GenerationQuery = {}) { return filterGenerations(historyRecords(), q).generations },
-    async listGenerationPage(q = {}) { return filterGenerations(historyRecords(), q) },
+    async listGenerations(q: GenerationQuery = {}) { return filterGenerations(await historyRecords(), q).generations },
+    async listGenerationPage(q = {}) { return filterGenerations(await historyRecords(), q) },
     getGeneration: getHistory,
     async setGenerationFavorite(ids, favorite) {
-      if (ids.some(id => !historyRecords().some(g => g.id === id))) throw new Error('生成记录不存在')
+      const records = await historyRecords()
+      if (ids.some(id => !records.some(g => g.id === id))) throw new Error('生成记录不存在')
       for (const id of ids) historyPreferences.set(id, { ...historyPreferences.get(id), favorite })
     },
     async deleteGenerations(ids) {
-      if (ids.some(id => !historyRecords().some(g => g.id === id))) throw new Error('生成记录不存在')
+      const records = await historyRecords()
+      if (ids.some(id => !records.some(g => g.id === id))) throw new Error('生成记录不存在')
       for (const id of ids) historyPreferences.set(id, { ...historyPreferences.get(id), hidden: true })
     },
     downloadGenerations: ids => downloadGenerationArchive(ids, getHistory),
 
     async sendMessage(projectId, input, onEvent) {
-      hydrate()
+      await hydrate()
       const existingReplies = (messagesByProject[projectId] ?? []).filter(m => m.role === 'assistant' || m.role === 'ask')
       const firstRoundTitle = existingReplies.length === 0 ? summarizeProjectTitle(input.text, input.attachments, input.mode) : undefined
-      const user: ChatMessage = { id: uid('u'), role: 'user', text: input.text, attachments: input.attachments, createdAt: nowIso() }
-      messagesByProject[projectId] = [...(messagesByProject[projectId] ?? []), user]
+      const user: ChatMessage = { id: input.clientMessageId ?? uid('u'), role: 'user', text: input.text, mode: input.mode, generation: input.generation, attachments: input.attachments, createdAt: nowIso() }
+      messagesByProject[projectId] = mergeChatMessage(messagesByProject[projectId] ?? [], user)
       onEvent({ type: 'message', message: user })
 
       const applyAutoTitle = (title?: string) => {
@@ -637,6 +911,36 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
           p.name = title
           if (!stressEnabled()) persist()
         }
+      }
+
+      if (input.mode === 'video') {
+        await generateVideo(projectId, normalizeVideoGeneration(input.generation), input.attachments, onEvent)
+        return
+      }
+
+      const parents = [...new Set(input.attachments.flatMap(attachment => {
+        const item = projectCanvas(projectId).find(item => item.id === attachment.id || item.image.id === attachment.image.id)
+        return item ? [item.id] : []
+      }))]
+      const modelLabel = composerOptions().models.find(m => m.id === input.generation?.modelId)?.name ?? 'Nano Banana 2'
+      const ratioStr = input.generation?.ratio ?? '3:4'
+      const resStr = (input.generation?.resolution ?? '2k').toUpperCase()
+
+      if (input.mode === 'image') {
+        applyAutoTitle(firstRoundTitle)
+        await generate(
+          projectId,
+          input.generation?.count ?? 4,
+          '图像直出',
+          onEvent,
+          sourceImage(projectId, input.attachments),
+          parents,
+          '',
+          input.generation ? { ratio: input.generation.ratio, resolution: input.generation.resolution } : {},
+          undefined,
+          modelLabel,
+        )
+        return
       }
 
       const isAskReply = input.text.startsWith('Q：')
@@ -665,13 +969,41 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
         return
       }
 
-      const parents = [...new Set(input.attachments.flatMap(attachment => {
-        const item = projectCanvas(projectId).find(item => item.id === attachment.id || item.image.id === attachment.image.id)
-        return item ? [item.id] : []
-      }))]
-      const modelLabel = composerOptions().models.find(m => m.id === input.generation?.modelId)?.name ?? 'Nano Banana 2'
-      const ratioStr = input.generation?.ratio ?? '3:4'
-      const resStr = (input.generation?.resolution ?? '2k').toUpperCase()
+      if (/(先给方案|先看方案|出个方案)/.test(input.text)) {
+        await pause(280)
+        applyAutoTitle(firstRoundTitle)
+        const planId = uid('plan')
+        const planMsg: AssistantMessage = {
+          id: planId,
+          role: 'assistant',
+          ...(firstRoundTitle ? { title: firstRoundTitle } : {}),
+          createdAt: nowIso(),
+          steps: [{ label: '已生成生图方案，等待确认', icon: 'doc', status: 'done' }],
+          results: [],
+          body: '已按需求整理出图方案，确认后立即开始生成，也可先修改提示词或参考图。',
+          imagePlan: {
+            runId: planId,
+            revision: 1,
+            status: 'draft',
+            title: firstRoundTitle ?? '商品生图方案',
+            prompt: input.text.replace(/^(先给方案|先看方案|出个方案)[：:\s]*/, '').trim() || input.text,
+            generation: {
+              modelId: input.generation?.modelId ?? 'nano-banana-2',
+              ratio: ratioStr,
+              resolution: input.generation?.resolution ?? '2k',
+              count: input.generation?.count ?? 2,
+            },
+            unavailableReferenceCount: 0,
+            references: input.attachments.map(att => ({ assetId: att.image.id, label: att.label, image: { ...att.image } })),
+          },
+        }
+        messagesByProject[projectId] = [...(messagesByProject[projectId] ?? []), planMsg]
+        onEvent({ type: 'message', message: structuredClone(planMsg) })
+        if (!stressEnabled()) persist()
+        onEvent({ type: 'done' })
+        return
+      }
+
       const thinkMsg: AssistantMessage = {
         id: uid('a'),
         role: 'assistant',
@@ -727,6 +1059,47 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
       )
     },
 
+    async reviewImagePlan(projectId, command, onEvent) {
+      await hydrate()
+      const list = messagesByProject[projectId] ?? []
+      const target = list.find((m): m is AssistantMessage => m.role === 'assistant' && m.imagePlan?.runId === command.runId)
+      if (!target?.imagePlan || target.imagePlan.revision !== command.revision || target.imagePlan.status !== 'draft') {
+        throw new Error('方案已变更，请刷新查看最新状态')
+      }
+      if (command.action === 'save') {
+        const kept = command.referenceAssetIds.flatMap(assetId => {
+          const found = target.imagePlan!.references.find(ref => ref.assetId === assetId)
+          return found ? [found] : []
+        })
+        target.imagePlan = { ...target.imagePlan, revision: target.imagePlan.revision + 1, prompt: command.prompt, references: kept }
+        onEvent?.({ type: 'message-update', id: target.id, patch: { imagePlan: structuredClone(target.imagePlan) } })
+        if (!stressEnabled()) persist()
+        return
+      }
+      if (command.action === 'cancel') {
+        target.imagePlan = { ...target.imagePlan, status: 'cancelled' }
+        onEvent?.({ type: 'message-update', id: target.id, patch: { imagePlan: structuredClone(target.imagePlan) } })
+        if (!stressEnabled()) persist()
+        return
+      }
+      target.imagePlan = { ...target.imagePlan, status: 'confirmed' }
+      onEvent?.({ type: 'message-update', id: target.id, patch: { imagePlan: structuredClone(target.imagePlan) } })
+      const emit = onEvent ?? (() => {})
+      const modelLabel = composerOptions().models.find(m => m.id === target.imagePlan?.generation.modelId)?.name ?? 'Nano Banana 2'
+      await generate(
+        projectId,
+        target.imagePlan.generation.count,
+        target.imagePlan.title,
+        emit,
+        target.imagePlan.references[0]?.image,
+        [],
+        '',
+        { ratio: target.imagePlan.generation.ratio, resolution: target.imagePlan.generation.resolution },
+        undefined,
+        modelLabel,
+      )
+    },
+
     async listActiveTasks() {
       return collectActiveTasks()
     },
@@ -738,7 +1111,8 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
     },
 
     async runTool(projectId, toolId, itemIds, onEvent, params) {
-      hydrate()
+      // Loaded canvases reserve placeholders synchronously before yielding.
+      if (!hydrated) await hydrate()
       if (toolId === 'describe') {
         await pause(900)
         onEvent({ type: 'message', message: { id: uid('a'), role: 'assistant', createdAt: nowIso(), steps: [{ label: '反推提示词', icon: 'doc' }], results: [],
@@ -759,6 +1133,7 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
     },
 
     async retryToolRun(projectId, runId, onEvent) {
+      await hydrate()
       const run = runs.get(runId)
       if (!run || run.projectId !== projectId || retrying.has(runId)) return
       const failed = run.items.filter(item => item.status === 'failed' && item.retryAllowed)
@@ -813,6 +1188,9 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
     }
     const run = { projectId, items, message, specText }
     runs.set(runId, run)
+    if (toolId) for (const item of items) toolReplays.set(item.ref.id, {
+      id: item.ref.id, projectId, toolId, createdAt: item.createdAt ?? nowIso(), params: replayParameters(params),
+    })
     storeCanvas(projectId, occupied.map(item => structuredClone(item)))
     items.forEach(item => onEvent({ type: 'item-add', item: structuredClone(item) }))
     messagesByProject[projectId] = [...(messagesByProject[projectId] ?? []), message]
@@ -823,6 +1201,71 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
     await simulate(run, onEvent, items, failure === -1 ? items.length - 1 : failure)
   }
 
+
+  /** 视频模式：单输出、封面 + 可播放视频；阶段与图片生成一致 */
+  async function generateVideo(projectId: string, params: ReturnType<typeof normalizeVideoGeneration>, atts: ChatAttachment[], onEvent: (event: AgentEvent) => void) {
+    const first = atts.find(att => att.image?.url)?.image
+    const size = videoSize(params, first)
+    const occupied = [...projectCanvas(projectId)]
+    const runId = uid('mock-run')
+    const parents = [...new Set(atts.flatMap(att => {
+      const item = projectCanvas(projectId).find(item => item.id === att.id || item.image.id === att.image.id)
+      return item ? [item.id] : []
+    }))]
+    const anchor = occupied.find(item => item.id === parents[0])
+    const placed = placeResults(occupied, [{
+      id: uid('ci'), ref: { type: 'generation', id: uid('g') },
+      image: { id: uid('g'), url: M + 'video-poster.jpg', width: size.width, height: size.height },
+      video: { url: M + 'video-demo.mp4', duration: params.duration, width: size.width, height: size.height },
+      mediaType: 'video',
+      x: 0, y: 0, w: anchor ? anchor.w * size.width / Math.max(1, anchor.image.width) : Math.round(size.width * (150 / 1100)),
+      targetSize: { width: size.width, height: size.height },
+      parentIds: parents, status: 'running', generationPhase: 'queued', progress: 0,
+      placeholder: first, toolRunId: runId, startedAt: nowIso(), createdAt: nowIso(), estimatedDurationMs: 9000,
+    }], parents[0])
+    const item = placed[0]
+    const message: AssistantMessage = {
+      id: uid('a'), role: 'assistant', createdAt: nowIso(), streaming: true,
+      steps: [{ itemId: item.id, label: `视频生成 · ${params.duration}s`, icon: 'image' }],
+      results: [],
+    }
+    const run = { projectId, items: [item], message }
+    runs.set(runId, run)
+    storeCanvas(projectId, [...occupied, ...placed].map(current => structuredClone(current)))
+    onEvent({ type: 'item-add', item: structuredClone(item) })
+    messagesByProject[projectId] = [...(messagesByProject[projectId] ?? []), message]
+    onEvent({ type: 'message', message: structuredClone(message) })
+    publish(run, onEvent)
+
+    const failure = demoFailure()
+    await pause(1600)
+    update(run, item, { generationPhase: 'generating', progress: 10 }, onEvent)
+    for (const progress of [30, 55, 78, 92]) {
+      await pause(1100)
+      update(run, item, { progress }, onEvent)
+    }
+    update(run, item, { generationPhase: 'processing', progress: 95 }, onEvent)
+    await pause(1100)
+    update(run, item, failure === 0 || failure === -1
+      ? { status: 'failed', errorMessage: '视频处理未完成，请重试这条视频。', retryAllowed: true }
+      : { status: 'done', progress: 100, retryAllowed: false }, onEvent)
+
+    run.message.steps = run.message.steps.map(step => step.itemId ? { ...step, status: item.status === 'failed' ? 'failed' as const : 'done' as const } : step)
+    run.message.streaming = false
+    run.message.body = item.status === 'failed'
+      ? '这条视频没有完成，可在画布中重试。'
+      : `视频已完成（${params.duration} 秒）。点击封面播放，画布节点双击也能播放。`
+    run.message.meta = {
+      spec: `${params.duration}s · ${size.width}×${size.height} · ${first ? '跟随原图' : params.ratio} · ${VIDEO_MODEL_NAME}`,
+      suggestions: ['改成 10 秒再出一版', '换一张首帧试试', '描述再具体一些（运镜 / 动作）'],
+    }
+    messagesByProject[projectId] = (messagesByProject[projectId] ?? []).map(m => m.id === message.id ? structuredClone(run.message) : m)
+    if (!stressEnabled()) persist()
+    onEvent({ type: 'message-update', id: message.id, patch: structuredClone(run.message) })
+    notifyTasks()
+    onEvent({ type: 'done' })
+  }
+
   function publish(run: { projectId: string; items: CanvasItem[]; message: AssistantMessage; specText?: string }, onEvent: (event: AgentEvent) => void) {
     run.message.results = run.items.map(item => ({
       id: item.ref.id,
@@ -831,7 +1274,7 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
       ...(item.progress !== undefined ? { progress: item.progress } : {}),
       ...(item.generationPhase ? { generationPhase: item.generationPhase } : {}),
       ...(item.targetSize ? { targetSize: item.targetSize } : {}),
-      ...(item.status === 'done' ? { image: item.image } : {}),
+      ...(item.status === 'done' ? { image: item.image, ...(item.video ? { video: item.video } : {}) } : {}),
     }))
     const done = run.items.filter(item => item.status === 'done').length
     const failed = run.items.filter(item => item.status === 'failed').length
@@ -902,16 +1345,6 @@ export function createMockDataSource(options: { storage?: Pick<Storage, 'getItem
     onEvent({ type: 'done' })
   }
 
-}
-
-function fileToImage(file: File): Promise<ImageRef> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file)
-    const el = new Image()
-    el.onload = () => resolve({ id: uid('img'), url, width: el.naturalWidth, height: el.naturalHeight })
-    el.onerror = () => resolve({ id: uid('img'), url, width: 1000, height: 1000 })
-    el.src = url
-  })
 }
 
 export type { AgentMode }

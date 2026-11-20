@@ -1,34 +1,35 @@
-# 电商素材工作台 · 前端
+# Workbench V2 前端
 
-纯前端仓库：只有界面和本地 mock 数据，不接后端、不登录、不调用生图接口，用来快速迭代界面效果。
+独立的画布式电商素材工作台。界面来自主仓库的 V2 工作区（基于 `8450e8c7`，含当时尚未提交的前端更新）。启动后自动使用演示账号。项目和对话保存在当前浏览器，上传的演示素材使用 IndexedDB，生成结果使用仓库内的示例图片和视频。
 
-- 来源：主仓库 `/v2` 页面（G1–G7 合并版 `0eeb3edf`）。
-- 数据：`lib/v2/mock.ts`，存在浏览器 localStorage；生成结果是占位图（`public/v2-mock/`）。
-- 接口：`lib/v2/data-source.tsx` 的 `V2DataSource` 与主仓库保持一致，改好的界面可以原样合回去。
+## 本地运行
 
-## 运行
+需要 Node.js 22.13 或更新版本。
 
 ```bash
-npm install
-npm run dev        # http://localhost:3000 → 自动跳到 /v2
-npm run typecheck  # tsc
-npm test           # node:test 单测
-npm run build
+npm ci
+npm run dev
 ```
 
-## 目录
+打开 http://localhost:3000，首页自动进入 `/v2`。
 
 | 路径 | 内容 |
 | --- | --- |
-| `app/v2/` | 路由：首页、项目、画布 `/v2/canvas/[id]`、资产、工具；样式 `v2.css` |
-| `components/v2/` | 页面与组件；画布在 `components/v2/canvas/` |
-| `lib/v2/` | 类型、mock 数据源、画布排版/历史/生成状态等纯逻辑 |
-| `public/v2-mock/` | mock 图片 |
+| `/v2` | 商拍首页、创作输入框、常用工具、最近项目 |
+| `/v2/projects` | 项目列表 |
+| `/v2/canvas/<id>` | Agent 对话、方案确认、画布编辑与素材抽屉 |
+| `/v2/assets` | 商品、模特、品牌、素材及生成记录 |
+| `/v2/tools` | AI 工具目录 |
 
-## 页面
+## 开发
 
-- `/v2` 首页（输入框 + 案例做同款）
-- `/v2/projects` 项目列表
-- `/v2/canvas/<id>` 画布 + 对话面板
-- `/v2/assets` 资产（商品、模特、品牌、素材、生成记录）
-- `/v2/tools` AI 工具
+- `app/v2` 存放路由与样式，`components/v2` 存放页面和组件。
+- `lib/v2/data-source.tsx` 定义数据接口，`lib/v2/mock.ts` 提供本地演示实现。真实账号、Agent 执行及供应商调用由主仓库负责。
+- `public/v2-mock` 和 `public/v2-tool-previews` 存放演示素材。
+
+```bash
+npm run typecheck
+npm run lint
+npm test
+npm run build
+```

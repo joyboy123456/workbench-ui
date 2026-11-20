@@ -38,7 +38,9 @@ export function groupGenerationDays(records: Generation[], now = new Date()) {
 /** Only fields which can safely be prefilled; masks and transient image URLs never survive. */
 export function replayParameters(params: Record<string, unknown>) {
   const result: Record<string, string | number | string[]> = {}
-  const keys = ['prompt', 'ratio', 'n', 'screens', 'scene', 'poses', 'angles', 'color', 'mode', 'style', 'strength', 'factor']
+  const keys = ['prompt', 'ratio', 'n', 'screens', 'scene', 'poses', 'angles', 'color', 'mode', 'style', 'strength', 'factor',
+    // 椒图对齐的扩图参数（imageSize/model/feathering/referenceAssetIds/scale/position）随运行记录冻结，可回放。
+    'imageSize', 'model', 'feathering', 'referenceAssetIds', 'scale', 'positionX', 'positionY']
   for (const key of keys) {
     const value = params[key]
     if (typeof value === 'string' || typeof value === 'number' || Array.isArray(value) && value.every(v => typeof v === 'string')) result[key] = value

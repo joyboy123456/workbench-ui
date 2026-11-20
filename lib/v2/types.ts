@@ -13,6 +13,8 @@ export interface ImageRef {
   height: number
   /** 小图，列表与对话缩略图用；缺省时用 url */
   thumbUrl?: string
+  /** 外部案例的原图，只用于登记账号素材；展示用 url / thumbUrl。 */
+  sourceUrl?: string
 }
 
 /** 商品类目是开放的：服装、鞋包、家电、3C……由用户自建 */
@@ -63,22 +65,90 @@ export interface ComposerReferences {
   brandKits: BrandKit[]
 }
 
+export interface MaterialCategory {
+  id: ID
+  name: string
+  count: number
+  createdAt: string
+}
+
 export interface Material {
   id: ID
   name: string
   image: ImageRef
   /** 'upload' 用户上传 | 'saved' 从生成结果存入 | 'clip' 网页收藏 */
   origin: 'upload' | 'saved' | 'clip'
+  categoryId?: ID
+  deletedAt?: string
   createdAt: string
+}
+
+export interface PromptPreset {
+  id: ID
+  name: string
+  content: string
+  createdAt: string
+  updatedAt: string
+}
+
+/** 项目参考只保存账号资产身份，不复制图片。 */
+export const PROJECT_REFERENCE_SOURCES = ['product', 'material', 'upload', 'generation'] as const
+export type ProjectReferenceSource = (typeof PROJECT_REFERENCE_SOURCES)[number]
+
+export const PROJECT_REFERENCE_ROLES = ['product_lock', 'model_lock', 'style', 'pose', 'scene', 'other'] as const
+export type ProjectReferenceRole = (typeof PROJECT_REFERENCE_ROLES)[number]
+export type ProjectReferenceRoleSource = 'auto' | 'user'
+
+export interface ProjectReference {
+  id: ID
+  projectId: ID
+  source: ProjectReferenceSource
+  sourceId: ID
+  assetId: ID
+  role: ProjectReferenceRole
+  note: string
+  roleSource: ProjectReferenceRoleSource
+  enabled: boolean
+  sort: number
+  createdAt: string
+  updatedAt: string
+  /** 资产被删除或不再准入时省略，记录仍可由用户删除。 */
+  image?: ImageRef
+}
+
+/** 一次真实生成所冻结的参考顺序。图片编号按此数组从 1 开始。 */
+export interface AppliedProjectReference {
+  referenceId?: ID
+  assetId: ID
+  role: ProjectReferenceRole
+  note: string
+  explicit: boolean
+}
+
+export interface ProjectReferencePlan {
+  references: AppliedProjectReference[]
+  referencePlan: string
+  droppedReferenceIds: ID[]
+}
+
+export interface FrozenProjectReferencePlan extends ProjectReferencePlan {
+  version: 'project-references-v1'
+  projectId: ID
+  /** 位于 references 开头、由图片工具自身契约要求的输入数量。 */
+  functionalInputCount: number
 }
 
 export type GenerationKind = 'main' | 'detail' | 'model' | 'banner' | 'video' | 'edit'
 
 export interface Generation {
+  mode?: AgentMode
+  generation?: import('./composer-options').ComposerGeneration
   id: ID
   projectId: ID
   image: ImageRef
   kind: GenerationKind
+  /** 视频结果：封面用 image，播放与下载用 video */
+  video?: import('./video-options').VideoMedia
   /** 用到的商品与模特，用于溯源与筛选 */
   productIds: ID[]
   modelId?: ID
@@ -101,11 +171,16 @@ export interface Generation {
   resolution?: string
   outputCount?: number
   params?: ToolParams
+  attachments?: ChatAttachment[]
   /** running 时 0–100 */
   progress?: number
+  elapsedMs?: number
+  errorMessage?: string
+  retryAllowed?: boolean
 }
 
 export interface Project {
+  nameSource?: 'automatic' | 'manual'
   id: ID
   name: string
   cover?: ImageRef
@@ -128,6 +203,9 @@ export interface CanvasItem {
     | { type: 'product'; id: ID; imageId: ID }
     | { type: 'material'; id: ID }
   image: ImageRef
+  /** 视频节点：image 是封面帧，播放与下载用 video */
+  mediaType?: 'video'
+  video?: import('./video-options').VideoMedia
   x: number
   y: number
   /** 画布上显示宽度；高度按 targetSize（缺省为 image）比例算 */
@@ -139,6 +217,10 @@ export interface CanvasItem {
   /** 分类整理后的标题归属；不是父节点，不参与生成溯源。 */
   layoutSection?: CanvasCategory
   locked?: boolean
+  /** 用户明确锁定当前图片分辨率；与位置锁独立。 */
+  resolutionLocked?: boolean
+  /** 尺寸输入是否保持当前图片的宽高比，缺省开启。 */
+  aspectRatioLocked?: boolean
   /** 旧版单来源，读取时作为 parentIds 的兼容回退。不是画布分组。 */
   parentId?: ID
   /** 来源画布元素 ID，按主图、参考图排序；默认不画连线。 */
@@ -153,6 +235,8 @@ export interface CanvasItem {
   estimatedDurationMs?: number
   toolRunId?: string
   errorMessage?: string
+  agentRetry?: import('@/lib/agent/retry').AgentRetryTarget
+  agentOrigin?: { runId: string; taskId: string; slotId: string; slotIndex: number; attemptNumber: number }
   retryAllowed?: boolean
   startedAt?: string
   /** 本次引用的商品图，仅作生成占位底图 */
@@ -163,7 +247,7 @@ export type ArrangeMode = 'grid' | 'masonry' | 'category' | 'time'
 
 /* ---------------- 对话 ---------------- */
 
-export type AgentMode = 'agent' | 'ecom-set' | 'direct'
+export type AgentMode = 'agent' | 'image' | 'video' | 'ecom-set'
 
 export interface ChatAttachment {
   kind: 'product' | 'model' | 'canvas' | 'material' | 'upload' | 'brand'
@@ -173,6 +257,10 @@ export interface ChatAttachment {
 }
 
 export interface UserMessage {
+  appliedReferences?: ChatAttachment[]
+  clarificationResponse?: import('@/lib/agent/clarification').ClarificationContext
+  mode?: AgentMode
+  generation?: import('./composer-options').ComposerGeneration
   id: ID
   role: 'user'
   text: string
@@ -181,6 +269,7 @@ export interface UserMessage {
 }
 
 export interface AssistantStep {
+  streamStepId?: string
   /** Stable output identity: chat and canvas share its lifecycle display. */
   itemId?: ID
   /** 灰色状态行，如「思考完成」「AI 商品主图」 */
@@ -197,6 +286,13 @@ export interface AssistantStep {
 }
 
 export interface AssistantResultMeta {
+  risks?: string[]
+  modelName?: string
+  outputCount?: number
+  /** 本次实际采用参考的简短中文说明。 */
+  referencePlan?: string
+  /** 因十张上限未采用的项目参考 ID。 */
+  droppedReferenceIds?: ID[]
   /** 规格行，如 "3:4 · 1536×2048 · Nano Banana 2" */
   spec?: string
   /** 「这一版落实的几点」列表 */
@@ -206,6 +302,10 @@ export interface AssistantResultMeta {
 }
 
 export interface AssistantMessage {
+  canInspectRun?: boolean
+  imagePlan?: import('@/lib/agent-pi/image-plan').PiImagePlanView
+  failure?: import('./chat-error').ChatError
+  retryable?: boolean
   id: ID
   role: 'assistant'
   /** Agent 首轮回复时给出的简短项目标题 */
@@ -215,6 +315,8 @@ export interface AssistantMessage {
   results: {
     id: ID
     image?: ImageRef
+    /** 视频结果：卡片封面 + 点击播放 */
+    video?: import('./video-options').VideoMedia
     status: Generation['status']
     itemId?: ID
     ratio?: string
@@ -226,6 +328,8 @@ export interface AssistantMessage {
   body?: string
   /** 正在流式输出 */
   streaming?: boolean
+  /** Real SSE bypasses the snapshot-only typing fallback. */
+  textSource?: 'sse' | 'snapshot'
   /** 出图结果结构化信息 */
   meta?: AssistantResultMeta
   createdAt: string
@@ -237,7 +341,16 @@ export interface AskOption {
   description?: string
 }
 
+/** 一道澄清题（Lovart ask_user：mode single/multiple，末尾总有「其它」输入） */
+export interface AskQuestion {
+  question: string
+  mode?: 'single' | 'multiple'
+  options: AskOption[]
+  otherPlaceholder?: string
+}
+
 export interface AskMessage {
+  clarification?: import('@/lib/agent/clarification').Clarification
   id: ID
   role: 'ask'
   /** Agent 首轮回复时给出的简短项目标题 */
@@ -250,6 +363,8 @@ export interface AskMessage {
   options: AskOption[]
   /** D 其他输入框占位文案 */
   otherPlaceholder?: string
+  /** 多题（Lovart 一张卡最多若干题翻页）；缺省时用 question/options 当一题 */
+  questions?: AskQuestion[]
   /** 已回答状态 */
   answered?: { selectedKey: string; answerText: string }
   /** 已跳过状态 */
@@ -265,7 +380,6 @@ export interface ActiveTask {
   projectName: string
   title: string
   phase: 'queued' | 'generating' | 'processing' | 'unconfirmed'
-  progress: number
   thumbUrl?: string
   ratio?: string
   startedAt: string
@@ -322,19 +436,58 @@ export interface ToolField {
 
 export type ToolParams = Record<string, string | string[] | number | ImageRef | undefined>
 
-/** 首页「做同款」案例。接线：来自案例库（lib/clothing-cases.ts 的 listClothingCases / getClothingCasePreviews） */
+/** 案例分类：首页案例区 tab。retouch = 修图改图，fabric = 图案面料 / 家纺 */
+export type CaseCategory = 'model' | 'main' | 'detail' | 'style' | 'retouch' | 'fabric'
+
+/** 案例参考图（做同款时的原始输入示意） */
+export interface CaseReference extends ImageRef {
+  label?: string
+}
+
+/** 首页「做同款」案例。接线：来自服务端案例库（lib/server/v2/case-library.ts 合并 company + yibai 清单） */
 export interface CaseExample {
   id: ID
   title: string
+  /** url = 详情大图（仅详情打开时加载）；thumbUrl = 卡片缩略图；sourceUrl = 原图，只用于做同款登记素材 */
   image: ImageRef
   /** 案例分类（用于首页案例区筛选） */
-  category?: 'model' | 'main' | 'detail' | 'style'
+  category?: CaseCategory
   /** 瀑布流展示比例提示 */
   aspect?: 'tall' | 'square' | 'wide'
   /** 做同款时用到的工具；缺省走 Agent */
   toolId?: string
-  /** 做同款时预填的提示词 */
-  prompt?: string
+  /** 工具名，卡片与详情展示 */
+  toolName?: string
+  /** 公开短指令（对齐椒图 isMapping，不向浏览器暴露底层长提示词） */
+  keyword: string
+  /** 建议用户上传的自身商品/参考图角色说明 */
+  inputHint?: string[]
+  /** 案例的参考输入图 */
+  references?: CaseReference[]
+  /** 公开画面规格摘要（不含内部模型路由与渠道配比） */
+  meta?: { aspectRatio?: string; resolution?: string }
+}
+
+export interface CaseQuery {
+  category?: CaseCategory
+  toolId?: string
+  limit?: number
+  offset?: number
+}
+
+export interface CaseFacets {
+  /** 各分类案例数（不受分类筛选影响） */
+  categories: { id: CaseCategory; count: number }[]
+  /** 当前分类下有案例的工具，按数量倒序 */
+  tools: { id: string; name: string; count: number }[]
+}
+
+export interface CasePage {
+  cases: CaseExample[]
+  total: number
+  /** 下一页 offset；没有更多时为 null */
+  nextOffset: number | null
+  facets: CaseFacets
 }
 
 export interface Account {
@@ -371,4 +524,6 @@ export interface ToolCatalogItem {
   featured?: boolean
   /** 每张积分（占位） */
   cost?: number
+  /** 该工具在案例库里的案例数 */
+  caseCount?: number
 }

@@ -1,312 +1,309 @@
 'use client'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useLoad, useV2 } from '@/lib/v2/data-source'
-import { GENERATION_KINDS } from '@/lib/v2/generation-history'
-import type { AgentMode, CaseExample, ChatAttachment, Generation, ToolCatalogItem } from '@/lib/v2/types'
+import type { AgentMode, CaseExample, ChatAttachment, ToolCatalogItem } from '@/lib/v2/types'
+import { composerAttachments } from '@/lib/v2/composer-input'
+import { PENDING_KEY } from '@/lib/v2/pending-message'
+import { composerModeKey } from '@/lib/v2/agent-mode'
 import { Composer, type ComposerSubmission } from './composer'
 import { Icon } from './icons'
-import { Lightbox, type LightboxItem } from './lightbox'
 import { Shell } from './shell'
-import { SlidingTabs, relTime, useToast } from './ui'
+import { useToast } from './ui'
 import { useV2Auth } from './auth'
-import { HeroParticles } from './hero-particles'
 import { useStartTool } from './tools-page'
+import { CASE_CATEGORY_LABEL, CASE_CATEGORY_ORDER_PUBLIC, CaseGallery } from './case-gallery'
+import type { CaseCategory } from '@/lib/v2/types'
+import { HOME_TOOL_ORDER, HOME_TOOL_PREVIEWS } from '@/lib/v2/home-tool-previews'
 
-export const PENDING_KEY = (projectId: string) => `v2:pending:${projectId}`
-
-type Entry = 'chat' | 'canvas'
-const ENTRY_TABS: { id: Entry; name: string }[] = [
-  { id: 'chat', name: '对话生成' },
-  { id: 'canvas', name: '自由画布' },
-]
-
-type GenTab = 'all' | 'model' | 'main' | 'detail' | 'fav'
-const GEN_TABS: { id: GenTab; name: string }[] = [
-  { id: 'all', name: '全部' },
-  { id: 'model', name: '模特图' },
-  { id: 'main', name: '商品图' },
-  { id: 'detail', name: '详情页' },
-  { id: 'fav', name: '收藏' },
-]
-
-type CaseTab = 'all' | 'model' | 'main' | 'detail' | 'style'
-const CASE_TABS: { id: CaseTab; name: string }[] = [
-  { id: 'all', name: '全部' },
-  { id: 'model', name: '模特穿搭' },
-  { id: 'main', name: '商品主图' },
-  { id: 'detail', name: '详情海报' },
-  { id: 'style', name: '风格大片' },
-]
-const CASE_CAT_LABEL: Record<NonNullable<CaseExample['category']>, string> = {
-  model: '模特穿搭',
-  main: '商品主图',
-  detail: '详情海报',
-  style: '风格大片',
-}
-const STATUS_LABEL: Record<Generation['status'], string> = { done: '已完成', running: '生成中', failed: '失败' }
-
-/** 首页场景卡：精选在前，再补齐可用工具，固定 8 张 */
 const pickScenes = (all: ToolCatalogItem[]) => {
-  const ready = all.filter((t) => t.status === 'ready')
-  return [...ready.filter((t) => t.featured), ...ready.filter((t) => !t.featured)].slice(0, 8)
+  const ready = all.filter(tool => tool.status === 'ready')
+  const readyById = new Map(ready.map(tool => [tool.id, tool]))
+  const showcase = HOME_TOOL_ORDER.flatMap(id => {
+    const tool = readyById.get(id)
+    return tool ? [tool] : []
+  })
+  const other = ready.filter(tool => !HOME_TOOL_PREVIEWS[tool.id])
+  return [...showcase, ...other.filter(tool => tool.featured), ...other.filter(tool => !tool.featured)].slice(0, HOME_TOOL_ORDER.length)
 }
 
-const stamp = (iso: string) => {
-  const d = new Date(iso)
-  const now = new Date()
-  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
-  const diff = Math.round((day(now) - day(d)) / 86400000)
-  if (diff === 0) return `今天 ${hm}`
-  if (diff === 1) return `昨天 ${hm}`
-  return `${String(d.getMonth() + 1).padStart(2, '0')}月${String(d.getDate()).padStart(2, '0')}日 ${hm}`
+interface HeroSceneChip {
+  id: string
+  label: string
+  icon: string
+  prompts: { text: string; tag: string; mode?: AgentMode }[]
 }
+
+const HERO_SCENE_CHIPS: HeroSceneChip[] = [
+  {
+    id: 'ecom',
+    label: '电商',
+    icon: 'bag',
+    prompts: [
+      { text: '用我的商品原图制作一套亚马逊 Listing 商品图，包含白底主图、英文卖点图和使用场景图，各一张。', tag: '亚马逊商品套图', mode: 'agent' },
+      { text: '基于商品原图严格保留版型与细节，生成一组高转化自然光模特主图', tag: 'AI商品主图' },
+      { text: '固定当前服装与模特，衍生正面、侧面、走姿与近景等 8 张多机位套图', tag: '主图裂变' },
+      { text: '把商品卖点拆解成首屏视觉、面料微距与穿搭场景的统一风格套图', tag: '详情套图' },
+    ],
+  },
+  {
+    id: 'social',
+    label: '社交媒体',
+    icon: 'social',
+    prompts: [
+      { text: '生成一组适合小红书首图的 3:4 春日街拍穿搭种草图，氛围松弛自然', tag: '穿搭种草' },
+      { text: '围绕同款单品打造通勤、周末咖啡馆、度假三套不同场景的系列海报', tag: '系列海报' },
+      { text: '提取商品核心质感，设计一张视觉干净、构图吸睛的新品上新封面图', tag: '上新封面' },
+    ],
+  },
+  {
+    id: 'brand',
+    label: '品牌',
+    icon: 'brand',
+    prompts: [
+      { text: '以极简高级影棚柔光拍摄一组画册级 Lookbook 服装品牌形象大片', tag: '品牌大片' },
+      { text: '将品牌图案或标志自然融合到商品材质光影中，输出真实感样机效果图', tag: '虚拟样机' },
+      { text: '统一整组商品图的色调与光影冷暖倾向，保持店铺视觉调性高度一致', tag: '色调统一' },
+    ],
+  },
+  {
+    id: 'creative',
+    label: '创意',
+    icon: 'palette',
+    prompts: [
+      { text: '基于原款服装保留版型基因，探索 4 个不同面料花型与流行配色方案', tag: '配色改款' },
+      { text: '把这件服装转换成线条干净、结构准确的白底平面生产款式线稿图', tag: '款式线稿' },
+      { text: '融合两款参考服装的领型与廓形亮点，输出一组新季款式设计灵感图', tag: '多款混合' },
+    ],
+  },
+  {
+    id: 'detail',
+    label: '详情页',
+    icon: 'globe',
+    prompts: [
+      { text: '从商品主图规划并生成 6 屏版式统一、卖点清晰的完整电商详情页', tag: 'AI详情页' },
+      { text: '生成白底平铺、3D 立体悬浮与领口袖口面料微距三联特写套图', tag: '细节特写' },
+      { text: '参考高转化详情页版式结构，替换成当前商品生成同款排版成图', tag: '智能仿版' },
+    ],
+  },
+]
 
 export function HomePage() {
   const ds = useV2()
   const router = useRouter()
   const toast = useToast()
+  const [caseCat, setCaseCat] = useState<'all' | CaseCategory>('all')
   const { user, requireAuth } = useV2Auth()
   const [atts, setAtts] = useState<ChatAttachment[]>([])
-  const [entry, setEntry] = useState<Entry>('chat')
-  const [genTab, setGenTab] = useState<GenTab>('all')
-  const [caseTab, setCaseTab] = useState<CaseTab>('all')
-  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null)
-  const { data: projects } = useLoad((d) => d.listProjects(), [user?.id], !!user)
+  const [heroDraft, setHeroDraft] = useState<{ text: string; seq: number; mode?: AgentMode } | null>(null)
+  const heroComposer = useRef<HTMLDivElement>(null)
+  const [showQuickComposer, setShowQuickComposer] = useState(false)
+  useEffect(() => {
+    const target = heroComposer.current
+    const root = target?.closest('.main')
+    if (!target || !root || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver(([entry]) => {
+      setShowQuickComposer(entry.boundingClientRect.bottom <= (entry.rootBounds?.top ?? 0))
+    }, { root })
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [])
+  const [activeScene, setActiveScene] = useState<string | null>(null)
   const { data: catalog, loading: loadingCatalog } = useLoad((d) => d.listToolCatalog())
-  const { data: cases, loading: loadingCases } = useLoad((d) => d.listCases())
-  const { data: gens, loading: loadingGens, reload: reloadGens } = useLoad(
-    (d) => d.listGenerations({
-      limit: 10,
-      sort: 'newest',
-      ...(genTab === 'fav' ? { favorite: true } : genTab === 'all' ? {} : { kind: genTab }),
-    }),
-    [user?.id, genTab],
-    !!user,
-  )
   const { start: startTool, busy: toolBusy } = useStartTool()
 
-  const view = entry === 'canvas' ? 'split' : 'chat'
   const scenes = useMemo(() => pickScenes(catalog ?? []), [catalog])
-  const projectName = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p.name])), [projects])
-  const filteredCases = useMemo(() => {
-    const list = cases ?? []
-    if (caseTab === 'all') return list
-    return list.filter((c) => c.category === caseTab)
-  }, [cases, caseTab])
-
-  const startProject = async (text: string, mode: AgentMode, attachments = atts, submission?: ComposerSubmission) => {
-    const productIds = attachments.filter((a) => a.kind === 'product').map((a) => a.id)
-    const p = await ds.createProject({ productIds })
-    sessionStorage.setItem(PENDING_KEY(p.id), JSON.stringify({ text, mode, attachments, submission }))
-    router.push(`/v2/canvas/${p.id}?view=${view}`)
+  const selectedScene = HERO_SCENE_CHIPS.find((item) => item.id === activeScene) ?? null
+  const openingProject = useRef(false)
+  const creationAttempt = useRef<{ input: string; messageId: string; createdAt: string } | null>(null)
+  const [opening, setOpening] = useState(false)
+  const startProject = async (
+    text: string,
+    mode: AgentMode,
+    attachments = atts,
+    submission?: ComposerSubmission,
+    extra?: { caseId?: string; prefillOnly?: boolean; inputHint?: string[]; projectName?: string },
+  ) => {
+    if (openingProject.current) return false
+    openingProject.current = true
+    setOpening(true)
+    try {
+      const input = JSON.stringify([user?.id, text, mode, attachments, submission, extra])
+      if (creationAttempt.current?.input !== input) {
+        creationAttempt.current = { input, messageId: crypto.randomUUID(), createdAt: new Date().toISOString() }
+      }
+      const { messageId, createdAt } = creationAttempt.current
+      const productIds = attachments.filter(a => a.kind === 'product').map(a => a.id)
+      const firstMessage = extra?.prefillOnly ? undefined : {
+        id: messageId, role: 'user' as const, text, mode, generation: submission?.generation,
+        createdAt,
+        attachments: attachments.flatMap(a => {
+          const { id, url, thumbUrl, width, height } = a.image
+          // Blob previews live only in this tab. The chat transport registers them before POST.
+          if (!/^(https?:\/\/|\/(?!\/))/.test(url)) return []
+          return [{ ...a, image: { id, url, width, height, thumbUrl } }]
+        }),
+      }
+      const draft = JSON.stringify({ messageId, text, mode, attachments, submission, ...extra })
+      const p = await ds.createProject({ ...(extra?.projectName ? { name: extra.projectName } : {}), productIds, firstMessage })
+      try {
+        sessionStorage.setItem(PENDING_KEY(p.id), draft)
+      } catch {
+        if (!extra?.prefillOnly && !submission?.tool) {
+          // Storage can be unavailable in a private tab. The project already contains the first message.
+          const sent = await ds.sendMessage(p.id, { clientMessageId: messageId, text, mode, attachments,
+            caseId: extra?.caseId ?? submission?.caseId, generation: submission?.generation }, () => {})
+          if (sent === false) toast('消息已保存，请进入项目核实发送结果。')
+        } else toast('浏览器未能保存工具草稿，请在项目中重新选择工具。')
+      }
+      try {
+        const account = user ?? await ds.getSession()
+        localStorage.setItem(composerModeKey(account?.id, p.id), JSON.stringify(mode))
+        localStorage.setItem(composerModeKey(account?.id), JSON.stringify(mode))
+      } catch { /* The pending message also carries the selected mode. */ }
+      router.push(`/v2/canvas/${p.id}?view=chat`)
+    } catch (error) {
+      openingProject.current = false
+      setOpening(false)
+      throw error
+    }
   }
-  const start = (text: string, mode: AgentMode, attachments = atts, submission?: ComposerSubmission) =>
-    requireAuth(() => startProject(text, mode, attachments, submission))
-  const startCase = (c: CaseExample) =>
-    start(c.prompt ?? `参考这个案例做同款：${c.title}`, 'agent', [{ kind: 'material', id: c.id, label: c.title, image: c.image }])
+  const start = (
+    text: string,
+    mode: AgentMode,
+    attachments = atts,
+    submission?: ComposerSubmission,
+    extra?: { caseId?: string; prefillOnly?: boolean; inputHint?: string[]; projectName?: string },
+  ) =>
+    requireAuth(() => startProject(text, mode, attachments, submission, extra))
+  const startCase = (c: CaseExample) => {
+    if (atts.length > 0) {
+      void start(c.keyword, 'agent', atts, undefined, { caseId: c.id, projectName: c.title })
+      return
+    }
+    void start(c.keyword, 'agent', [], undefined, {
+      caseId: c.id,
+      prefillOnly: true,
+      inputHint: c.inputHint,
+      projectName: c.title,
+    })
+  }
 
   return (
     <Shell>
-      <div className="hm-top">
-        <HeroParticles />
-        <section className="hm-hero">
-          <h1>今天给哪件<em>商品</em>出图？</h1>
-          <p className="hm-sub">从一件商品开始，完成整套电商视觉</p>
-          <div className="hm-seg" role="tablist" aria-label="创作方式">
-            {ENTRY_TABS.map((t) => (
-              <button key={t.id} type="button" role="tab" aria-selected={entry === t.id} className={entry === t.id ? 'on' : ''} onClick={() => setEntry(t.id)}>
-                {t.name}
+      <div className="lv-home">
+        <section className="lv-hero">
+          <h1>今天给哪件商品出图？</h1>
+          <div className="hm-composer" ref={heroComposer}>
+            <Composer
+              hero
+              busy={opening}
+              floating={showQuickComposer}
+              draft={heroDraft}
+              attachments={atts}
+              onAttachmentsChange={setAtts}
+              onSend={(t, m, submission) => startProject(t, m, composerAttachments(m, atts, submission.firstFrame), submission)}
+              placeholder="上传商品图，描述想要的画面"
+              autoFocus
+            />
+          </div>
+          <div className="lv-chips" role="toolbar" aria-label="快捷场景">
+            {HERO_SCENE_CHIPS.map((chip) => (
+              <button
+                key={chip.id}
+                type="button"
+                className={'lv-chip' + (activeScene === chip.id ? ' on' : '')}
+                aria-expanded={activeScene === chip.id}
+                onClick={() => setActiveScene((prev) => (prev === chip.id ? null : chip.id))}
+              >
+                <Icon name={chip.icon} size={14} />
+                <span>{chip.label}</span>
               </button>
             ))}
-            <span className="hm-seg-ind" style={{ transform: `translateX(${entry === 'chat' ? 0 : 100}%)` }} aria-hidden />
+          </div>
+          {selectedScene && (
+            <div className="lv-scene-panel" role="region" aria-label={`${selectedScene.label}创作灵感`}>
+              <div className="lv-scene-panel-hd">
+                <span><Icon name={selectedScene.icon} size={14} />{selectedScene.label}推荐指令</span>
+                <button type="button" className="ibtn" aria-label="关闭推荐指令" onClick={() => setActiveScene(null)}>
+                  <Icon name="x" size={13} />
+                </button>
+              </div>
+              <div className="lv-scene-rows">
+                {selectedScene.prompts.map((item) => (
+                  <button
+                    key={item.tag}
+                    type="button"
+                    className="lv-scene-row"
+                    onClick={() => {
+                      setHeroDraft((prev) => ({ text: item.text, seq: (prev?.seq ?? 0) + 1, mode: item.mode }))
+                      setActiveScene(null)
+                    }}
+                  >
+                    <span className="lv-scene-txt">{item.text}</span>
+                    <em className="lv-scene-tag">{item.tag}</em>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="lv-block">
+          <div className="lv-sec-h">
+            <span>工具</span>
+            <Link className="lv-more" href="/v2/tools">更多工具 <Icon name="right" size={11} /></Link>
+          </div>
+          <div className="lv-tool-row">
+            {loadingCatalog && !catalog
+              ? Array.from({ length: HOME_TOOL_ORDER.length }, (_, i) => <div key={i} className="lv-tool"><span className="lv-tool-th skel" /></div>)
+              : scenes.map((t, i) => {
+                  const preview = HOME_TOOL_PREVIEWS[t.id]
+                  const title = preview?.title ?? t.name
+                  return (
+                    <button
+                      type="button"
+                      key={t.id}
+                      className="lv-tool"
+                      style={{ '--i': i } as CSSProperties}
+                      disabled={!!toolBusy}
+                      aria-label={title}
+                      aria-description={preview?.description}
+                      onClick={() => startTool(t)}
+                    >
+                      {preview ? (
+                        <span className="lv-tool-th lv-tool-preview" data-layout={preview.layout} aria-hidden="true">
+                          {preview.panels.map(({ src, label, position, fit }) => (
+                            <span className="lv-tool-panel" key={src}>
+                              <img src={src} alt="" decoding="async" style={{ objectPosition: position, objectFit: fit }} />
+                              {label && <span className="lv-tool-caption">{label}</span>}
+                            </span>
+                          ))}
+                          <span className="lv-tool-cue" />
+                        </span>
+                      ) : (
+                        <span className="lv-tool-th"><img src={t.cover.after} alt="" decoding="async" /></span>
+                      )}
+                      <span className="lv-tool-n">{title}</span>
+                    </button>
+                  )
+                })}
           </div>
         </section>
 
-        <div className="hm-composer">
-          <Composer
-            hero
-            attachments={atts}
-            onAttachmentsChange={setAtts}
-            onSend={(t, m, submission) => startProject(t, m, atts, submission)}
-            placeholder={entry === 'canvas' ? '描述你想要的画面，生成结果会放进自由画布' : '上传商品图或用 @ 引用资产，描述你想要的画面'}
-            autoFocus
-          />
-        </div>
+        <section className="lv-block">
+          <div className="lv-sec-h"><span>案例</span></div>
+          <div className="lv-scenebar" role="toolbar" aria-label="案例分类">
+            {(['all', ...CASE_CATEGORY_ORDER_PUBLIC] as ('all' | CaseCategory)[]).map((c) => (
+              <button key={c} type="button" className={caseCat === c ? 'on' : ''} onClick={() => setCaseCat(c)}>{c === 'all' ? '为你推荐' : CASE_CATEGORY_LABEL[c]}</button>
+            ))}
+          </div>
+          <div className="hm-cases-wrap" id="cases">
+            <CaseGallery onMakeSame={startCase} category={caseCat} hideFilters />
+          </div>
+        </section>
       </div>
-
-      <div className="hm-scenes">
-        <CaseBanner cases={cases ?? []} onPick={startCase} />
-        <div className="hm-scene-grid">
-          {loadingCatalog && !catalog
-            ? Array.from({ length: 8 }, (_, i) => <div key={i} className="hm-scene skel" />)
-            : Array.from({ length: 8 }, (_, i) => {
-                const t = scenes[i]
-                if (!t) return <div key={i} className="hm-scene empty" aria-hidden />
-                return (
-                  <button
-                    type="button"
-                    key={t.id}
-                    className="hm-scene"
-                    style={{ '--i': i } as CSSProperties}
-                    disabled={!!toolBusy}
-                    onClick={() => startTool(t)}
-                  >
-                    <span className="hm-scene-th"><img src={t.cover.after} alt="" /></span>
-                    <span className="hm-scene-tx">
-                      <b>{t.name}</b>
-                      <small>{t.desc}</small>
-                    </span>
-                    <Icon name="right" size={12} />
-                  </button>
-                )
-              })}
-        </div>
-      </div>
-
-      <div className="hm-sec">
-        <h2>最近生成</h2>
-        <SlidingTabs tabs={GEN_TABS} active={genTab} onChange={setGenTab} small />
-        <Link className="hm-more" href="/v2/assets?tab=history" onClick={(e) => { if (!user) { e.preventDefault(); void requireAuth(() => router.push('/v2/assets?tab=history')) } }}>
-          查看全部 <Icon name="right" size={11} />
-        </Link>
-      </div>
-      <div className="hm-gens">
-        {!user ? (
-          Array.from({ length: 5 }, (_, i) => <div key={i} className="hm-gen empty"><div className="hm-gen-ph" /></div>)
-        ) : loadingGens && !gens ? (
-          Array.from({ length: 5 }, (_, i) => <div key={i} className="hm-gen"><div className="hm-gen-ph skel" /></div>)
-        ) : (gens ?? []).length === 0 ? (
-          <div className="hm-gens-empty">{genTab === 'fav' ? '还没有收藏的图' : '这一类还没有生成记录'}</div>
-        ) : (
-          (gens ?? []).map((g, i) => (
-            <button
-              key={g.id}
-              type="button"
-              className="hm-gen"
-              style={{ '--i': i, textAlign: 'left' } as CSSProperties}
-              onClick={() => setLightboxIdx(i)}
-            >
-              <div className="hm-gen-ph"><img src={g.image.thumbUrl ?? g.image.url} alt="" /></div>
-              <div className="hm-gen-t">{projectName.get(g.projectId) ?? '未命名项目'} · {GENERATION_KINDS[g.kind]}</div>
-              <div className="hm-gen-m" title={relTime(g.createdAt)}>
-                <Icon name="hist" size={11} />{stamp(g.createdAt)} · <span className={'st-' + g.status}>{STATUS_LABEL[g.status]}</span>
-              </div>
-            </button>
-          ))
-        )}
-      </div>
-
-      <div className="hm-sec hm-sec-cases">
-        <h2>精选案例</h2>
-        <SlidingTabs tabs={CASE_TABS} active={caseTab} onChange={setCaseTab} small />
-      </div>
-      <div className="hm-cases">
-        {loadingCases && !cases ? (
-          Array.from({ length: 10 }, (_, i) => (
-            <div key={i} className={`hm-case-card skel-card ${i % 3 === 0 ? 'ar-tall' : i % 3 === 1 ? 'ar-square' : 'ar-wide'}`}>
-              <div className="hm-case-ph skel" />
-            </div>
-          ))
-        ) : filteredCases.length === 0 ? (
-          <div className="hm-gens-empty">这一类还没有案例</div>
-        ) : (
-          filteredCases.map((c, i) => (
-            <button
-              key={c.id}
-              type="button"
-              className={`hm-case-card ar-${c.aspect ?? (i % 3 === 0 ? 'tall' : i % 3 === 1 ? 'square' : 'wide')}`}
-              style={{ '--i': i } as CSSProperties}
-              onClick={() => startCase(c)}
-            >
-              <div className="hm-case-ph">
-                <img src={c.image.thumbUrl ?? c.image.url} alt={c.title} loading="lazy" />
-                <span className="hm-case-cta">做同款</span>
-                <span className="hm-case-badge" aria-hidden><Icon name="spark" size={11} /></span>
-              </div>
-              <div className="hm-case-info">
-                <span className="hm-case-t">{c.title}</span>
-                {c.category && <span className="hm-case-cat">{CASE_CAT_LABEL[c.category]}</span>}
-              </div>
-            </button>
-          ))
-        )}
-      </div>
-      {lightboxIdx !== null && (gens ?? []).length > 0 && (
-        <Lightbox
-          items={(gens ?? []).map((g): LightboxItem => ({
-            id: g.id,
-            generationId: g.id,
-            projectId: g.projectId,
-            image: g.image,
-            title: `${projectName.get(g.projectId) ?? '未命名项目'} · ${GENERATION_KINDS[g.kind]}`,
-            prompt: g.prompt,
-            modelName: g.modelName,
-            ratio: g.ratio,
-            resolution: g.resolution,
-            createdAt: g.createdAt,
-            favorite: g.favorite,
-          }))}
-          index={lightboxIdx}
-          onIndexChange={setLightboxIdx}
-          onClose={() => setLightboxIdx(null)}
-          onToggleFavorite={async (it) => {
-            try {
-              await ds.setGenerationFavorite([it.id], !it.favorite)
-              reloadGens()
-              toast(it.favorite ? '已取消收藏' : '已收藏')
-            } catch { toast('收藏操作失败') }
-          }}
-          onUseAsReference={(it) => {
-            setAtts((prev) => [
-              ...prev.filter((a) => a.image.id !== it.image.id),
-              { kind: 'material', id: it.id, label: it.title ?? '参考图', image: it.image },
-            ])
-            setLightboxIdx(null)
-            toast('已添加到首页输入框参考图')
-          }}
-          onRegenerate={(it) => {
-            setLightboxIdx(null)
-            if (it.projectId) {
-              router.push(`/v2/canvas/${encodeURIComponent(it.projectId)}?view=split&reuse=${encodeURIComponent(it.id)}`)
-            }
-          }}
-        />
-      )}
     </Shell>
   )
 }
-
-/** 左侧大图：轮播做同款案例，点击即做同款 */
-function CaseBanner({ cases, onPick }: { cases: CaseExample[]; onPick: (c: CaseExample) => void }) {
-  const list = cases.slice(0, 4)
-  const [idx, setIdx] = useState(0)
-  useEffect(() => {
-    if (list.length < 2) return
-    const t = window.setInterval(() => setIdx((i) => (i + 1) % list.length), 5000)
-    return () => window.clearInterval(t)
-  }, [list.length])
-  const c = list[idx % Math.max(list.length, 1)]
-  if (!c) return <div className="hm-banner empty"><span>做同款案例加载中</span></div>
-  return (
-    <div className="hm-banner">
-      <button type="button" className="hm-banner-hit" onClick={() => onPick(c)} aria-label={`做同款：${c.title}`}>
-        <img key={c.id} src={c.image.url} alt="" />
-        <span className="hm-banner-tx">
-          <b>{c.title}</b>
-          <small>一键做同款，换成你的商品</small>
-        </span>
-      </button>
-      {list.length > 1 && (
-        <div className="hm-dots" role="tablist" aria-label="切换案例">
-          {list.map((x, i) => (
-            <button key={x.id} type="button" role="tab" aria-selected={i === idx} className={i === idx ? 'on' : ''} onClick={() => setIdx(i)} aria-label={x.title} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-

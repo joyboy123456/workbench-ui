@@ -1,0 +1,6 @@
+/** Compare JSON snapshots by content, independent of object property insertion order. */
+export function snapshotKey(value: unknown): string {
+  return JSON.stringify(value, (_key, entry: unknown) => entry && typeof entry === 'object' && !Array.isArray(entry)
+    ? Object.fromEntries(Object.entries(entry).sort(([a], [b]) => a.localeCompare(b)))
+    : entry)
+}
