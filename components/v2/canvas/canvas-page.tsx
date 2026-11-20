@@ -1119,6 +1119,12 @@ function CanvasInner({ id, userId }: { id: string; userId: string }) {
         onProjectDeleted={() => router.push('/v2')}
         onNewProject={newProject}
         onFocusResult={focusResult}
+        onOpenReferences={(messageId) => {
+          if (messageId) setFocusedMessageId(messageId)
+          setView('split')
+          setRefTab('refs')
+          handleCollapseRefChange(false)
+        }}
         view={view}
         collapsed={chatCollapsed}
         onCollapseChange={handleCollapseChange}

@@ -47,6 +47,7 @@ export interface ChatPanelProps {
   onNewProject: () => void
   creatingProject?: boolean
   onFocusResult: (generationId: string, messageId?: string) => void
+  onOpenReferences?: (messageId?: string) => void
   view: SessionView
   collapsed: boolean
   onCollapseChange: (collapsed: boolean) => void
@@ -569,27 +570,38 @@ export function ChatPanel(p: ChatPanelProps) {
               const active = s.status === 'running' || (s.status !== 'done' && s.status !== 'failed' && (s.label.includes('中') || Boolean(s.progress && s.progress.done < s.progress.total)))
               const done = !active && s.status !== 'failed'
               const failed = s.status === 'failed'
-              const canExpand = Boolean(s.collapsible || s.detail)
+              const stepLabel = publicAgentText(s.label)
+              const opensRefPanel = Boolean(p.onOpenReferences && !active && !failed && /参考(素材|图)?分析|已分析参考图/.test(stepLabel))
+              const canExpand = !opensRefPanel && Boolean(s.collapsible || s.detail)
+              const clickable = opensRefPanel || canExpand
               const stepKey = `${m.id}:${i}`
               const expanded = expandedSteps[stepKey] ?? (s.icon === 'think' && Boolean(s.detail))
+              const handleStepClick = () => {
+                if (opensRefPanel) {
+                  p.onOpenReferences?.(m.id)
+                  return
+                }
+                if (canExpand) setExpandedSteps(prev => ({ ...prev, [stepKey]: !expanded }))
+              }
               return (
                 <div key={i} className="sl-wrap" style={{ '--step-i': i } as CSSProperties}>
                   <div
-                    className={'sl' + (active ? ' active' : '') + (done ? ' done' : '') + (failed ? ' failed' : '') + (canExpand ? ' collapsible' : '')}
-                    role={canExpand ? 'button' : undefined}
-                    tabIndex={canExpand ? 0 : undefined}
+                    className={'sl' + (active ? ' active' : '') + (done ? ' done' : '') + (failed ? ' failed' : '') + (canExpand ? ' collapsible' : '') + (opensRefPanel ? ' collapsible ref-link' : '')}
+                    role={clickable ? 'button' : undefined}
+                    tabIndex={clickable ? 0 : undefined}
                     aria-expanded={canExpand ? expanded : undefined}
-                    onClick={canExpand ? () => setExpandedSteps(prev => ({ ...prev, [stepKey]: !expanded })) : undefined}
-                    onKeyDown={canExpand ? (e) => {
+                    title={opensRefPanel ? '查看参考素材面板' : undefined}
+                    onClick={clickable ? handleStepClick : undefined}
+                    onKeyDown={clickable ? (e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault()
-                        setExpandedSteps(prev => ({ ...prev, [stepKey]: !expanded }))
+                        handleStepClick()
                       }
                     } : undefined}
                   >
                     <Icon name={failed ? 'alert' : STEP_ICON[s.icon]} size={13} />
-                    <span className="sl-txt">{publicAgentText(s.label)}{s.progress && ` · 生成中 ${s.progress.done} / ${s.progress.total}`}</span>
-                    {canExpand && <Icon name="chevR" size={12} className={'sl-caret' + (expanded ? ' open' : '')} />}
+                    <span className="sl-txt">{stepLabel}{s.progress && ` · 生成中 ${s.progress.done} / ${s.progress.total}`}</span>
+                    {clickable && <Icon name="chevR" size={12} className={'sl-caret' + (canExpand && expanded ? ' open' : '')} />}
                     {active && <i className="pulse-dot" aria-hidden />}
                   </div>
                   {canExpand && expanded && s.detail && (

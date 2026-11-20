@@ -14,6 +14,7 @@ import type { ArrangeMode, CanvasItem, ChatMessage, ToolDef, ToolParams } from '
 import type { RegenerationPlan } from '@/lib/v2/regenerate'
 import type { ToolRegenerationDraft } from '@/lib/v2/regenerate-draft'
 import { Icon } from '../icons'
+import { useV2Theme } from '../root'
 import { FloatingMenu, useToast } from '../ui'
 import { SelectionFrame } from './selection-frame'
 import { SelectionToolbar } from './selection-toolbar'
@@ -60,11 +61,26 @@ export interface BoardProps {
   autoTool?: ToolRegenerationDraft | null
 }
 
+function isDarkCanvas(bg: string | null | undefined, theme: 'light' | 'dark'): boolean {
+  const m = bg?.trim().match(/^#([0-9a-f]{6})$/i)
+  if (!m) return theme === 'dark'
+  const hex = parseInt(m[1], 16)
+  const luma = (0.299 * ((hex >> 16) & 255) + 0.587 * ((hex >> 8) & 255) + 0.114 * (hex & 255)) / 255
+  return luma < 0.5
+}
+
+function canvasDotColor(bg: string | null | undefined, isDark: boolean): string {
+  if (!bg?.trim().match(/^#([0-9a-f]{6})$/i)) return 'var(--cv-dot)'
+  return isDark ? 'rgba(255, 255, 255, 0.11)' : 'rgba(0, 0, 0, 0.18)'
+}
+
 type Menu = null | { kind: 'node'; id: string; x: number; y: number } | { kind: 'pane'; x: number; y: number } | { kind: 'more' | 'options' | 'layers'; id: string; x: number; y: number; toolId?: string; trigger?: HTMLButtonElement }
 
 export function Board(p: BoardProps) {
   const rf = useReactFlow()
   const toast = useToast()
+  const { theme } = useV2Theme()
+  const darkCanvas = isDarkCanvas(p.canvasBg, theme)
   const stage = useRef<HTMLDivElement>(null)
   const clipboard = useRef<CanvasItem[]>([])
   const fitItems = useCanvasFit(p.drawerOpen)
@@ -351,7 +367,7 @@ export function Board(p: BoardProps) {
         fitViewOptions={{ padding: panePad, maxZoom: 1 }}
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#1f1f1f" />
+        <Background variant={BackgroundVariant.Dots} gap={24} size={darkCanvas ? 3.5 : 2} color={canvasDotColor(p.canvasBg, darkCanvas)} />
         <CanvasNavigation items={p.items} selected={p.selected} cols={cols} onCols={setCols} onArrange={doArrange} active={p.active} drawerOpen={p.drawerOpen} canvasBg={p.canvasBg} onCanvasBg={p.onCanvasBg} onPreview={p.onPreview} onDownload={p.onDownload} />
         <ViewportPortal>
           {sections.map(section => <div key={section.id} className="canvas-section-title" style={{ transform: `translate(${section.x}px, ${section.y}px)`, width: section.width }}>

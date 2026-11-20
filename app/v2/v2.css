@@ -2,30 +2,35 @@
 .v2 {
   /* 深色底、工作区域和浮层以灰阶区分。 */
   --ink: 255 255 255;
-  --bg: #000000;
-  --panel: #121212;
-  --panel-glass: #181818f2;
-  --hover: #222222;
+  --bg: #161616;
+  --panel: #1a1a1a;
+  --panel-glass: #242424f2;
+  --hover: #262626;
   --hover-alpha: #ffffff12;
-  --pop: #181818;
-  --pop-glass: #181818f2;
-  --soft: #151515;
-  --soft2: #242424;
-  --cv: #0d0d0d;
-  --line: #ffffff14;
+  --hover-alpha-hi: #ffffff1c;
+  --pop: #1f1f1f;
+  --pop-glass: #242424bf;
+  --soft: #1f1f1f;
+  --soft2: #2a2a2a;
+  --cv: #141414;
+  --cv-dot: rgba(255, 255, 255, 0.11);
+  --line: #ffffff12;
   --line2: #ffffff1f;
-  --line-hi: #ffffff29;
-  --hairline: #ffffff14;
-  --hairline-hi: #ffffff29;
+  --line-hi: #ffffff2e;
+  --hairline: #ffffff12;
+  --hairline-hi: #ffffff2e;
   --tx: #ffffff;
-  --tx2: #b3b3b3;
-  --tx3: #929292;
-  --acc: #3b82f6;
-  --acc-focus: #3b82f673;
-  --acc-soft: #3b82f61f;
-  --acc-glow: #3b82f659;
+  --tx2: #ffffff99;
+  --tx3: #ffffff4d;
+  --acc: #84adff;
+  --acc-focus: #84adff66;
+  --acc-soft: #3b82f626;
+  --acc-glow: #84adff59;
+  --ref: #8b5cf6;
+  --ref-soft: #9d7cff1f;
+  --ref-tx: #c4b5fd;
   --cta: #ffffff;
-  --cta-on: #000000;
+  --cta-on: #161616;
   --danger: #e74c3c;
 
   /* 字号阶梯与排版 */
@@ -5249,26 +5254,33 @@
   --bg: #ffffff;
   --panel: #ffffff;
   --panel-glass: #fffffff2;
-  --hover: #eeeeee;
-  --hover-alpha: #0000000d;
+  --hover: #f0f0f0;
+  --hover-alpha: #0000000a;
+  --hover-alpha-hi: #00000014;
   --pop: #ffffff;
-  --pop-glass: #fffffff2;
-  --soft: #f6f6f6;
-  --soft2: #ededed;
+  --pop-glass: #ffffffbf;
+  --soft: #f5f5f5;
+  --soft2: #ebebeb;
   --cv: #f5f5f5;
+  --cv-dot: rgba(0, 0, 0, 0.17);
   --line: #00000012;
-  --line2: #00000018;
-  --line-hi: #00000028;
+  --line2: #0000001a;
+  --line-hi: #00000026;
   --hairline: #00000012;
-  --hairline-hi: #00000028;
-  --tx: #161616;
-  --tx2: #595959;
-  --tx3: #6e6e6e;
-  --cta: #171717;
+  --hairline-hi: #00000026;
+  --tx: #000000e6;
+  --tx2: #0000008c;
+  --tx3: #0000004d;
+  --acc: #3b82f6;
+  --acc-focus: #3b82f666;
+  --acc-soft: #3b82f618;
+  --ref: #8b5cf6;
+  --ref-soft: #8b5cf618;
+  --ref-tx: #7c3aed;
+  --cta: #2c2c2c;
   --cta-on: #ffffff;
-  --sh-float: 0 10px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.03);
+  --sh-float: 0 12px 32px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
 }
-.v2:not(.is-dark) .react-flow__background pattern circle { fill: #d4d4d4; }
 .v2:not(.is-dark) .bt, .v2:not(.is-dark) .ftb.selection-toolbar { box-shadow: 0 0 0 1px var(--line), 0 4px 16px rgba(0, 0, 0, 0.08); }
 .v2:not(.is-dark) .bt button:hover:not(:disabled), .v2:not(.is-dark) .ftb.selection-toolbar button:hover { background: var(--hover-alpha); }
 .v2:not(.is-dark) .bt button.on, .v2:not(.is-dark) .ftb.selection-toolbar button[aria-pressed="true"], .v2:not(.is-dark) .ftb.selection-toolbar button[aria-expanded="true"] { background: #00000014; }
@@ -6710,9 +6722,6 @@
 }
 .v2 .cv-root.mode-chat .cv-stage {
   top: 0;
-}
-.v2:not(.is-dark) .react-flow__background pattern circle {
-  fill: transparent;
 }
 .v2 .cv-stage > .bt.nav-canvas-tools {
   bottom: 16px;
@@ -8329,4 +8338,998 @@
 }
 .v2 .ask-msg.ask-err {
   color: var(--danger);
+}
+
+/* ---------- P0/P1 美化层：参考 Lovart 2.0 语义色板、悬浮卡与毛玻璃浮层 ---------- */
+
+/* 侧边栏主行动点：浅色白卡细描边，深色柔和浮层，弱化厚重感 */
+.v2 .rail {
+  background: var(--soft);
+  border-right: 1px solid var(--line);
+}
+.v2:not(.is-dark) .rail-create {
+  background: #ffffff;
+  color: var(--tx);
+  border: 1px solid var(--line2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.v2:not(.is-dark) .rail-create:hover {
+  background: #ffffff;
+  border-color: var(--line-hi);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07);
+  opacity: 1;
+}
+.v2.is-dark .rail-create {
+  background: #262626;
+  color: var(--tx);
+  border: 1px solid var(--line2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+.v2.is-dark .rail-create:hover {
+  background: #2e2e2e;
+  border-color: var(--line-hi);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  opacity: 1;
+}
+.v2 .rail .n {
+  font-weight: 400;
+  color: var(--tx2);
+}
+.v2 .rail .n:hover {
+  background: var(--hover-alpha);
+  color: var(--tx);
+}
+.v2 .rail .n.on {
+  background: var(--hover-alpha-hi);
+  color: var(--tx);
+  font-weight: 500;
+}
+
+/* 首页 Hero 与 Prompt 悬浮输入卡：减负聚焦 + 柔散双层阴影 */
+.v2 .lv-hero h1 {
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: var(--tx);
+}
+.v2 .lv-hero .hm-composer .cp2 {
+  border-radius: 20px;
+  padding: 16px 18px 14px;
+  background: var(--pop);
+  border: 1px solid var(--line2);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: border-color var(--dur-med) var(--ease-out), box-shadow var(--dur-med) var(--ease-out);
+}
+.v2.is-dark .lv-hero .hm-composer .cp2 {
+  background: var(--pop);
+  border-color: var(--line2);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.42), 0 1px 0 inset rgba(255, 255, 255, 0.04);
+}
+.v2 .lv-hero .hm-composer .cp2:focus-within {
+  border-color: var(--line-hi);
+  box-shadow: 0 14px 42px rgba(0, 0, 0, 0.09), 0 0 0 3px var(--hover-alpha);
+}
+.v2.is-dark .lv-hero .hm-composer .cp2:focus-within {
+  border-color: var(--line-hi);
+  box-shadow: 0 16px 46px rgba(0, 0, 0, 0.52), 0 0 0 3px rgba(255, 255, 255, 0.05);
+}
+.v2 .cp-upload-slot {
+  border-radius: 12px;
+  border-color: var(--line2);
+  background: var(--hover-alpha);
+}
+.v2 .cp-upload-slot:hover {
+  border-color: var(--line-hi);
+  background: var(--hover-alpha-hi);
+}
+.v2 .lv-chip {
+  height: 30px;
+  padding: 0 13px;
+  font-size: 13px;
+  color: var(--tx2);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.v2 .lv-chip:hover {
+  color: var(--tx);
+  background: var(--hover-alpha);
+  box-shadow: inset 0 0 0 1px var(--line2);
+}
+
+/* 首页工具行与项目卡片：圆角嵌套 + 细腻边框 */
+.v2 .lv-tool-th,
+.v2 .lv-pgd .pc .ph2 {
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.v2 .lv-tool:hover .lv-tool-th {
+  box-shadow: inset 0 0 0 1px var(--line-hi), 0 10px 26px -8px rgba(0, 0, 0, 0.12);
+  transform: translateY(-1px);
+}
+.v2.is-dark .lv-tool:hover .lv-tool-th {
+  box-shadow: inset 0 0 0 1px var(--line-hi), 0 14px 30px -8px rgba(0, 0, 0, 0.55);
+}
+.v2 .lv-tool:hover .lv-tool-th img {
+  transform: scale(1.025);
+}
+
+/* 画布浮层与工具栏：统一 L1 毛玻璃 + 极细描边 + 柔和阴影 */
+.v2 .bt,
+.v2 .ftb.selection-toolbar,
+.v2 .nav-focus-banner,
+.v2 .nav-history,
+.v2 .nav-dialog {
+  background: var(--panel-glass);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  border-color: var(--line);
+  box-shadow: var(--sh-float);
+}
+.v2.is-dark .bt,
+.v2.is-dark .ftb.selection-toolbar {
+  box-shadow: 0 0 0 1px var(--line2), 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.v2 .bt button:hover:not(:disabled),
+.v2 .ftb.selection-toolbar button:hover {
+  background: var(--hover-alpha);
+}
+.v2 .bt button.on,
+.v2 .ftb.selection-toolbar button[aria-pressed="true"],
+.v2 .ftb.selection-toolbar button[aria-expanded="true"] {
+  background: var(--hover-alpha-hi);
+}
+
+/* @引用芯片：Lovart 引用紫语义强调 */
+.v2 .ref,
+.v2 .cp2 .refs span,
+.v2 .ub .message-ref {
+  background: var(--ref-soft);
+  color: var(--ref-tx);
+  border-color: color-mix(in srgb, var(--ref) 24%, transparent);
+}
+.v2 .ub .message-ref:hover {
+  background: color-mix(in srgb, var(--ref) 22%, transparent);
+}
+
+/* ---------- 结构级视觉升级：全屏沉浸画布 + 浮岛毛玻璃面板 + 首页输入框去表单化 ---------- */
+
+/* 1. 首页 Hero 输入框去表单化：移除厚重虚线上传块，弱化次级胶囊，突出输入与主发送钮 */
+.v2 .lv-hero {
+  padding-top: 72px;
+}
+.v2 .lv-hero h1 {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-bottom: 24px;
+}
+.v2 .lv-hero .hm-composer {
+  max-width: 740px;
+}
+.v2 .lv-hero .hm-composer .cp2.cp-hero {
+  border-radius: 24px;
+  padding: 18px 20px 14px;
+  border: 1px solid var(--line2);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.07), 0 2px 6px rgba(0, 0, 0, 0.03);
+}
+.v2.is-dark .lv-hero .hm-composer .cp2.cp-hero {
+  background: #1f1f22;
+  border-color: var(--line2);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.48), 0 1px 0 inset rgba(255, 255, 255, 0.05);
+}
+.v2 .lv-hero .cp2.cp-hero .cp-upload-slot {
+  display: none;
+}
+.v2 .lv-hero .cp2.cp-hero textarea {
+  min-height: 58px;
+  font-size: 15px;
+}
+.v2 .lv-hero .cp2.cp-hero .ctl .c,
+.v2 .lv-hero .cp2.cp-hero .ctl .cp-control-model {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--tx2);
+}
+.v2 .lv-hero .cp2.cp-hero .ctl .c:hover,
+.v2 .lv-hero .cp2.cp-hero .ctl .cp-control-model:hover {
+  background: var(--hover-alpha);
+  color: var(--tx);
+}
+.v2 .lv-hero .cp2.cp-hero .cp-hero-modes {
+  background: var(--hover-alpha);
+  border: 0;
+  padding: 2px;
+}
+.v2 .lv-hero .cp2.cp-hero .cp-hero-modes button {
+  background: transparent;
+  color: var(--tx2);
+}
+.v2 .lv-hero .cp2.cp-hero .cp-hero-modes button[aria-pressed="true"] {
+  background: var(--pop);
+  color: var(--tx);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.v2 .lv-chips {
+  gap: 8px;
+  margin-top: 18px;
+}
+.v2 .lv-chip {
+  height: 30px;
+  padding: 0 14px;
+  font-size: 12.5px;
+  background: var(--hover-alpha);
+  box-shadow: none;
+  color: var(--tx2);
+}
+.v2 .lv-chip:hover {
+  background: var(--hover-alpha-hi);
+  color: var(--tx);
+  box-shadow: none;
+}
+
+/* 2. 画布页：全屏铺满点阵画布 + 左右/顶部悬浮毛玻璃岛屿 */
+.v2 .cv-root.mode-split {
+  background-color: var(--cv);
+  background-image: radial-gradient(var(--cv-dot) 1.2px, transparent 1.2px);
+  background-size: 24px 24px;
+}
+.v2 .cv-root.mode-split .cv-stage {
+  left: calc(var(--chat-w) + var(--ref-w));
+}
+.v2 .cv-root.mode-split .fp.view-split {
+  top: 12px;
+  left: 12px;
+  bottom: 12px;
+  width: calc(var(--chat-w) - 16px);
+  border-radius: 18px;
+  border: 1px solid var(--line2);
+  background: var(--panel-glass);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.09), 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+.v2.is-dark .cv-root.mode-split .fp.view-split {
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5), 0 1px 0 inset rgba(255, 255, 255, 0.05);
+}
+.v2 .cv-root.mode-split .fp.view-split.collapsed {
+  transform: translateX(calc(-100% - 24px));
+}
+.v2 .cv-root.mode-split .fp.view-split .fh {
+  background: transparent;
+  border-bottom: 1px solid var(--line);
+}
+
+/* 参考素材栏悬浮岛 */
+.v2 .cv-root.mode-split .ref-panel {
+  top: 64px;
+  bottom: 12px;
+  left: calc(var(--chat-w) + 8px);
+  width: calc(var(--ref-w) - 14px);
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--panel-glass);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.07), 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+.v2.is-dark .cv-root.mode-split .ref-panel {
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
+}
+
+/* 画布顶栏：去除整条实色白条，改为左右两组悬浮毛玻璃胶囊 */
+.v2 .cv-root.mode-split .cv-topbar {
+  top: 12px;
+  left: calc(var(--chat-w) + 8px);
+  right: 12px;
+  height: 42px;
+  padding: 0;
+  background: transparent;
+  border-bottom: 0;
+  pointer-events: none;
+}
+.v2 .cv-root.mode-split.chat-collapsed .cv-topbar {
+  left: 12px;
+}
+.v2 .cv-root.mode-split .cv-topbar-l,
+.v2 .cv-root.mode-split .cv-topbar-r {
+  pointer-events: auto;
+  height: 40px;
+  padding: 0 8px;
+  border-radius: 14px;
+  background: var(--panel-glass);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid var(--line);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+.v2.is-dark .cv-root.mode-split .cv-topbar-l,
+.v2.is-dark .cv-root.mode-split .cv-topbar-r {
+  border-color: var(--line2);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
+}
+
+/* 底部工具栏居中对齐可用画布区域，并提升悬浮圆润质感 */
+.v2 .cv-root.mode-split .cv-stage > .bt {
+  left: 50%;
+  bottom: 16px;
+  border-radius: 14px;
+  padding: 4px 6px;
+}
+.v2 .cv-root.mode-split .fp .cp2.cp-canvas {
+  border-radius: 16px;
+  border: 1px solid var(--line2);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+}
+
+/* ---------- 对话进程精修：对齐 Lovart 实拍竖向步骤链 + 参考素材分析点击联动 ---------- */
+
+.v2 .ab-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 12px;
+}
+.v2 .ab-steps .sl-wrap:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 21px;
+  bottom: -5px;
+  width: 1px;
+  background: var(--line);
+  pointer-events: none;
+}
+.v2 .ab .sl,
+.v2 .fp.view-chat .ab .sl {
+  gap: 8px;
+  font-size: 13px;
+  line-height: 25px;
+  color: var(--tx2);
+}
+.v2 .ab .sl.done,
+.v2 .ab .sl.done > svg:first-child {
+  color: var(--tx2);
+}
+.v2 .ab .sl.collapsible {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px 0 4px;
+  margin-left: -4px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.v2 .ab .sl.collapsible:hover {
+  background: var(--hover-alpha);
+  color: var(--tx);
+}
+.v2 .ab .sl.ref-link .sl-caret {
+  opacity: 0.72;
+  transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+}
+.v2 .ab .sl.ref-link:hover .sl-caret {
+  opacity: 1;
+  transform: translateX(2px);
+}
+.v2 .ab .sl-detail {
+  margin: 2px 0 6px 6px;
+  padding: 2px 0 4px 15px;
+  border-left: 1px solid var(--line2);
+  color: var(--tx2);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.v2 .fp.view-chat .msgs {
+  gap: 22px;
+}
+
+
+/* ---------- AI 工具表单弹层（对齐即梦左表单 + 右模板/结果工作区） ---------- */
+
+.v2 .tf-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(12, 12, 14, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  padding: 20px;
+}
+.v2 .tf-shell {
+  width: 100%;
+  height: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  display: flex;
+  gap: 24px;
+  border-radius: 26px;
+  background: var(--bg);
+  border: 1px solid var(--line2);
+  padding: 20px;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.v2.is-dark .tf-shell {
+  background: #121214;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* 左侧 400px 圆角表单卡 */
+.v2 .tf-form {
+  width: 396px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 22px;
+  background: var(--panel);
+  border: 1px solid var(--line2);
+  overflow: hidden;
+}
+.v2.is-dark .tf-form {
+  background: #19191c;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+.v2 .tf-form-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 10px;
+}
+.v2 .tf-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--tx);
+  letter-spacing: -0.01em;
+}
+.v2 .tf-tag {
+  font-size: 11px;
+  color: var(--tx2);
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--soft);
+}
+.v2 .tf-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.v2 .tf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v2 .tf-field-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--tx);
+}
+.v2 .tf-field-h em {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--tx3);
+}
+.v2 .tf-drop {
+  position: relative;
+  height: 196px;
+  border-radius: 16px;
+  border: 1px dashed var(--line2);
+  background: var(--soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+.v2 .tf-drop.compact {
+  height: 132px;
+}
+.v2 .tf-drop.mini {
+  height: 88px;
+  border-radius: 12px;
+}
+.v2 .tf-drop:hover,
+.v2 .tf-drop.drag {
+  border-color: var(--acc);
+  background: var(--hover-alpha);
+}
+.v2 .tf-drop.filled {
+  border-style: solid;
+  border-color: var(--line2);
+  background: #0d0d0f;
+}
+.v2 .tf-empty-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  padding: 12px;
+  color: var(--tx2);
+}
+.v2 .tf-empty-drop b {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--tx);
+}
+.v2 .tf-empty-drop small {
+  font-size: 12px;
+  color: var(--tx3);
+}
+.v2 .tf-drop-ic {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--hover-alpha);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tx);
+  margin-bottom: 2px;
+}
+.v2 .tf-preview {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.v2 .tf-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.v2 .tf-tpl-badge {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(15, 15, 18, 0.78);
+  color: #fff;
+  backdrop-filter: blur(8px);
+}
+.v2 .tf-clear {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(15, 15, 18, 0.72);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.v2 .tf-clear:hover {
+  background: rgba(15, 15, 18, 0.92);
+}
+.v2 .tf-opt-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.v2 .tf-opt-toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--tx2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.v2 .tf-opt-toggle:hover {
+  background: var(--hover-alpha);
+  color: var(--tx);
+}
+.v2 .tf-opt-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.v2 .tf-textarea {
+  width: 100%;
+  resize: none;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--tx);
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 10px 12px;
+  outline: none;
+}
+.v2 .tf-textarea:focus {
+  border-color: var(--acc);
+}
+
+/* 左侧底部粘性参数条 + 52px 主生成按钮 */
+.v2 .tf-footer {
+  padding: 12px 20px 18px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.v2 .tf-settings {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.v2 .tf-pill-select,
+.v2 .tf-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--tx2);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.v2 .tf-pill-select select {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  outline: none;
+  cursor: pointer;
+}
+.v2 .tf-pill-btn:hover,
+.v2 .tf-pill-select:hover {
+  background: var(--hover-alpha);
+  color: var(--tx);
+}
+.v2 .tf-submit {
+  width: 100%;
+  height: 50px;
+  border-radius: 15px;
+  border: 0;
+  background: var(--tx);
+  color: var(--bg);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.v2 .tf-submit:hover:not(:disabled) {
+  opacity: 0.92;
+}
+.v2 .tf-submit:disabled {
+  opacity: 0.34;
+  cursor: not-allowed;
+}
+
+/* 右侧模板引导 & 实时生成结果区 */
+.v2 .tf-stage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.v2 .tf-stage-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+.v2 .tf-stage-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.v2 .tf-tab {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--tx2);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.v2 .tf-tab.on {
+  background: var(--soft);
+  border-color: var(--line);
+  color: var(--tx);
+}
+.v2 .tf-stage-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.v2 .tf-enter-canvas {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 0;
+  background: var(--acc);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.v2 .tf-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--tx2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.v2 .tf-close:hover {
+  color: var(--tx);
+  background: var(--hover-alpha);
+}
+.v2 .tf-guide-wrap,
+.v2 .tf-results-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 8px 24px;
+}
+.v2 .tf-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin: 4px auto 26px;
+  max-width: 520px;
+}
+.v2 .tf-hero-img {
+  width: 280px;
+  height: 152px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  margin-bottom: 16px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.14);
+}
+.v2 .tf-hero-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.v2 .tf-hero h3 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--tx);
+}
+.v2 .tf-hero p {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--tx2);
+  line-height: 1.55;
+}
+.v2 .tf-tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.v2 .tf-tpl-card {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  background: var(--soft);
+  padding: 0;
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.v2 .tf-tpl-card:hover {
+  transform: translateY(-2px);
+}
+.v2 .tf-tpl-card.on {
+  border-color: var(--acc);
+}
+.v2 .tf-tpl-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.v2 .tf-tpl-hover {
+  position: absolute;
+  inset: auto 8px 8px 8px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  background: rgba(15, 15, 18, 0.78);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.v2 .tf-tpl-card:hover .tf-tpl-hover,
+.v2 .tf-tpl-card.on .tf-tpl-hover {
+  opacity: 1;
+}
+.v2 .tf-tpl-skel {
+  aspect-ratio: 3 / 4;
+  border-radius: 14px;
+  background: var(--soft);
+}
+
+/* 右侧结果展示网格 */
+.v2 .tf-results-head h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--tx);
+}
+.v2 .tf-results-head p {
+  margin: 0 0 18px;
+  font-size: 13px;
+  color: var(--tx2);
+}
+.v2 .tf-error {
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.v2 .tf-note {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  color: var(--tx);
+  font-size: 13px;
+  line-height: 1.65;
+  margin-bottom: 16px;
+}
+.v2 .tf-results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+.v2 .tf-res-card {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  aspect-ratio: 3 / 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.v2 .tf-res-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+.v2 .tf-res-card.loading span {
+  position: relative;
+  z-index: 1;
+  font-size: 12.5px;
+  color: var(--tx2);
+}
+.v2 .tf-res-skel {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 25%, var(--hover-alpha) 50%, transparent 75%);
+  background-size: 200% 100%;
+  animation: tf-shimmer 1.4s infinite linear;
+}
+@keyframes tf-shimmer {
+  to { background-position: -200% 0; }
+}
+.v2 .tf-res-bar {
+  position: absolute;
+  inset: auto 10px 10px 10px;
+  display: flex;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.v2 .tf-res-card:hover .tf-res-bar {
+  opacity: 1;
+}
+.v2 .tf-res-bar button,
+.v2 .tf-res-bar a {
+  flex: 1;
+  height: 30px;
+  border-radius: 8px;
+  border: 0;
+  background: rgba(15, 15, 18, 0.8);
+  color: #fff;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-decoration: none;
+  cursor: pointer;
+}
+@media (max-width: 960px) {
+  .v2 .tf-shell {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .v2 .tf-form {
+    width: 100%;
+  }
+  .v2 .tf-tpl-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.v2 .tf-input {
+  width: 100%;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--tx);
+  font-size: 13px;
+  padding: 0 11px;
+  outline: none;
+}
+.v2 .tf-input:focus {
+  border-color: var(--acc);
+}
+.v2 .tf-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--tx3);
+}
+.v2 .tf-note p {
+  margin: 0 0 10px;
+  white-space: pre-wrap;
+}
+.v2 .tf-copy-btn {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line2);
+  background: var(--panel);
+  color: var(--tx);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.v2 .tf-copy-btn:hover {
+  background: var(--hover-alpha);
 }

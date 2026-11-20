@@ -12,7 +12,7 @@ import { Icon } from './icons'
 import { Shell } from './shell'
 import { useToast } from './ui'
 import { useV2Auth } from './auth'
-import { useStartTool } from './tools-page'
+import { ToolLaunchModal } from './tool-launch-modal'
 import { CASE_CATEGORY_LABEL, CASE_CATEGORY_ORDER_PUBLIC, CaseGallery } from './case-gallery'
 import type { CaseCategory } from '@/lib/v2/types'
 import { HOME_TOOL_ORDER, HOME_TOOL_PREVIEWS } from '@/lib/v2/home-tool-previews'
@@ -111,7 +111,7 @@ export function HomePage() {
   }, [])
   const [activeScene, setActiveScene] = useState<string | null>(null)
   const { data: catalog, loading: loadingCatalog } = useLoad((d) => d.listToolCatalog())
-  const { start: startTool, busy: toolBusy } = useStartTool()
+  const [activeTool, setActiveTool] = useState<ToolCatalogItem | null>(null)
 
   const scenes = useMemo(() => pickScenes(catalog ?? []), [catalog])
   const selectedScene = HERO_SCENE_CHIPS.find((item) => item.id === activeScene) ?? null
@@ -268,10 +268,10 @@ export function HomePage() {
                       key={t.id}
                       className="lv-tool"
                       style={{ '--i': i } as CSSProperties}
-                      disabled={!!toolBusy}
+                      disabled={t.status !== 'ready'}
                       aria-label={title}
                       aria-description={preview?.description}
-                      onClick={() => startTool(t)}
+                      onClick={() => setActiveTool(t)}
                     >
                       {preview ? (
                         <span className="lv-tool-th lv-tool-preview" data-layout={preview.layout} aria-hidden="true">
@@ -305,6 +305,7 @@ export function HomePage() {
           </div>
         </section>
       </div>
+          {activeTool && <ToolLaunchModal tool={activeTool} onClose={() => setActiveTool(null)} />}
     </Shell>
   )
 }

@@ -360,3 +360,26 @@ test('Lovart 对话排版：保留语义步骤图标、默认展开思考摘要�
   assert.match(html, /<b>Q:<\/b> 这组图的主题方向是哪个？？?/)
   assert.match(html, /<b>A:<\/b> OOTD 穿搭分享/)
 })
+
+test('reference analysis step renders clickable chevron link when onOpenReferences is provided', () => {
+  const props: ChatPanelProps = {
+    project: { id: 'p_ref', name: '参考联动', updatedAt: '2026-11-20T00:00:00.000Z', productIds: [] },
+    messages: [{
+      id: 'a_ref',
+      role: 'assistant',
+      createdAt: '2026-11-20T00:00:01.000Z',
+      steps: [
+        { label: '思考完成', icon: 'think', status: 'done' },
+        { label: '参考素材分析结束', icon: 'image', status: 'done' },
+      ],
+      results: [],
+    }],
+    attachments: [], canvasImages: [], busy: false, drawerOpen: false, view: 'chat', collapsed: false,
+    onAttachmentsChange() {}, onSend() {}, onToggleDrawer() {}, onRename() {}, onNewProject() {},
+    onFocusResult() {}, onOpenReferences() {}, onCollapseChange() {}, onViewChange() {},
+  }
+  const html = renderToStaticMarkup(createElement(V2Provider, { source: createMockDataSource(), children: createElement(V2AuthProvider, { children: createElement(ChatPanel, props) }) }))
+  assert.match(html, /class="sl done collapsible ref-link"/)
+  assert.match(html, /title="查看参考素材面板"/)
+  assert.match(html, /data-icon="chevR"/)
+})
