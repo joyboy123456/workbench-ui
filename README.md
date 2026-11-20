@@ -26,7 +26,7 @@ npm run dev
 - `app/v2` 存放路由与样式，`components/v2` 存放页面和组件。
 - `lib/v2/data-source.tsx` 定义数据接口，`lib/v2/mock.ts` 提供本地演示实现。真实账号、Agent 执行及供应商调用由主仓库负责。
 - `public/v2-mock` 和 `public/v2-tool-previews` 存放演示素材。
-- 服装大片演示数据保存在 `lib/v2/mock-fashion-cases.json`，配套 WebP 封面和 MP4 样片位于 `public/v2-mock/fashion`。样片由自有静态成图加运镜制成。
+- 服装大片演示数据保存在 `lib/v2/mock-fashion-cases.json`，配套 WebP 封面和 MP4 样片位于 `public/v2-mock/fashion`。衣百授权案例使用原始成图和视频，列表使用本地生成的 WebP 缩略图。自有动态样片也保留在同一数据集里。
 
 ```bash
 npm run typecheck

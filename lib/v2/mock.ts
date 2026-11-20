@@ -361,14 +361,14 @@ export const TOOLS: ToolDef[] = [
 ]
 
 const FASHION_CASE_MEDIA = '/v2-mock/fashion/'
-const FASHION_CASES: CaseExample[] = fashionCaseFixtures.map(({ id, title, width, height, poster, duration, reference }) => {
+const FASHION_CASES: CaseExample[] = fashionCaseFixtures.map(({ id, title, width, height, poster, duration, reference, aspectRatio }) => {
   const caseId = `fashion-${id}`
   const imageId = poster ?? id
   return {
     id: caseId,
     title,
     category: 'model',
-    aspect: 'tall',
+    aspect: width > height ? 'wide' : width === height ? 'square' : 'tall',
     image: {
       id: caseId,
       url: `${FASHION_CASE_MEDIA}${imageId}.webp`,
@@ -380,7 +380,7 @@ const FASHION_CASES: CaseExample[] = fashionCaseFixtures.map(({ id, title, width
     inputHint: poster ? ['服装商品图', '首帧参考图（可选）'] : ['服装商品图'],
     ...(poster && duration ? { video: { url: `${FASHION_CASE_MEDIA}${id}.mp4`, duration } } : {}),
     ...(reference && { references: [{ ...reference, url: `${FASHION_CASE_MEDIA}${reference.id}.webp`, label: '服装商品参考' }] }),
-    meta: { aspectRatio: '3:4' },
+    meta: { aspectRatio: aspectRatio ?? '3:4' },
   }
 })
 
