@@ -8,7 +8,8 @@
     "preview": "pnpm --filter cloth-aigc-frontend preview",
     "typecheck": "pnpm --filter cloth-aigc-frontend typecheck",
     "lint": "pnpm --filter cloth-aigc-frontend lint",
-    "test": "pnpm --filter cloth-aigc-frontend test"
+    "test": "pnpm --filter cloth-aigc-frontend test",
+    "fix": "pnpm --filter cloth-aigc-frontend fix"
   },
   "engines": {
     "node": ">=22.13.0"

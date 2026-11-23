@@ -1,9 +1,9 @@
 /* 仅扫描实际界面源码，避免历史构建和 .scratch 验证产物进入样式编译。 */
 @import "tailwindcss" source(none);
+@import "tw-animate-css";
 @source "../app";
 @source "../components";
 @source "../lib";
-@import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
