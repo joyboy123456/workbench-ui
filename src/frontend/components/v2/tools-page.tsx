@@ -33,6 +33,8 @@ export function ToolsPage() {
 
   useEffect(() => {
     setToolId(sp?.get('tool')?.trim() ?? '')
+    setActiveTool(null)
+    setCasesOf(null)
     const nextCat = sp?.get('cat')?.trim() as Tab | undefined
     if (nextCat && TABS.some((item) => item.id === nextCat)) {
       setTab(nextCat)
