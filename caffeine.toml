@@ -1,0 +1,7 @@
+manifest_version = "0.1.0"
+
+[project]
+name = "商拍生成工作台"
+
+[workspace]
+include = ["src/**"]

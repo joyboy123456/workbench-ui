@@ -1,7 +1,6 @@
-node_modules
-.next
-out
+node_modules/
+.mops/
+src/backend/dist/
+src/frontend/dist/
 *.tsbuildinfo
-next-env.d.ts
 .env*
-.DS_Store
